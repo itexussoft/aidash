@@ -31,7 +31,7 @@ function rootLabel(root) {
 	// `email` from the enrolled account is the reliable one; the live probe is a
 	// fallback for folders the app does not otherwise know about.
 	const who = root.email ?? (root.loggedIn ? 'signed in' : 'not signed in');
-	return `${root.label} · ${who}`;
+	return [root.label, who, root.plan].filter(Boolean).join(' · ');
 }
 
 function sessionCard(session, rootId, projectKey) {
@@ -54,15 +54,17 @@ function projectRow(project) {
 		.map((root) => {
 			const sessions = project.byRoot[root.id] ?? [];
 			// You drag between accounts, not between folders, so the account is
-			// what the column is named after; the folder stays as the subtitle
-			// because two accounts can look alike until you see the path.
+			// what the column is named after. The plan is part of that name
+			// because one address can be signed in twice under different plans,
+			// and the folder stays as the subtitle to tell those apart for certain.
 			const who = root.email ?? (root.loggedIn ? 'signed in' : 'not signed in');
+			const subtitle = [root.plan, root.label].filter(Boolean).join(' · ');
 			return `
         <div class="col" data-root="${escapeHtml(root.id)}" data-project="${escapeHtml(project.key)}">
           <div class="col-head">
             <span class="col-who">
               <b class="${root.email ? '' : 'unknown'}">${escapeHtml(who)}</b>
-              <span class="col-path" title="${escapeHtml(root.path ?? '')}">${escapeHtml(root.label)}</span>
+              <span class="col-path" title="${escapeHtml(root.path ?? '')}">${escapeHtml(subtitle)}</span>
             </span>
             <span class="col-count">${sessions.length || ''}</span>
           </div>

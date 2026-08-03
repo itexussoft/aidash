@@ -12,13 +12,11 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { userInfo } from 'node:os';
+import { keychainService } from './claude-config.js';
 
 const run = promisify(execFile);
-
-const serviceFor = (configDir) => `Claude Code-credentials-${createHash('sha256').update(configDir).digest('hex').slice(0, 8)}`;
 
 const credFileFor = (configDir) => join(configDir, '.credentials.json');
 
@@ -37,7 +35,7 @@ export async function readClaudeCredentials(configDir) {
 	if (process.platform !== 'darwin') return null;
 
 	try {
-		const { stdout } = await run('security', ['find-generic-password', '-s', serviceFor(configDir), '-w']);
+		const { stdout } = await run('security', ['find-generic-password', '-s', keychainService(configDir), '-w']);
 		const raw = JSON.parse(stdout);
 		return raw.claudeAiOauth ?? raw;
 	} catch {
@@ -73,7 +71,7 @@ export async function writeClaudeCredentials(configDir, oauth) {
 		'-a',
 		userInfo().username,
 		'-s',
-		serviceFor(configDir),
+		keychainService(configDir),
 		'-w',
 		payload,
 	]);
@@ -83,7 +81,7 @@ export async function writeClaudeCredentials(configDir, oauth) {
 export async function deleteClaudeCredentials(configDir) {
 	if (process.platform !== 'darwin') return;
 	try {
-		await run('security', ['delete-generic-password', '-s', serviceFor(configDir)]);
+		await run('security', ['delete-generic-password', '-s', keychainService(configDir)]);
 	} catch {
 		/* nothing stored for this directory */
 	}

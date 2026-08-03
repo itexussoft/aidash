@@ -23,6 +23,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { locate, spawnOptionsFor } from './locate.js';
+import { DEFAULT_CONFIG_DIR, claudeEnv } from './claude-config.js';
 
 const run = promisify(execFile);
 
@@ -30,7 +31,7 @@ const run = promisify(execFile);
 // pulling a large transcript into memory.
 const HEAD_BYTES = 128 * 1024;
 
-export const DEFAULT_ROOT = join(homedir(), '.claude');
+export const DEFAULT_ROOT = DEFAULT_CONFIG_DIR;
 
 const exists = (p) =>
 	access(p).then(
@@ -104,7 +105,7 @@ export async function identifyRoot(dir) {
 		const binary = locate('claude');
 		if (!binary) return { email: null, plan: null, loggedIn: false };
 		const { stdout } = await run(binary, ['auth', 'status'], {
-			env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+			env: { ...process.env, ...claudeEnv(dir) },
 			...spawnOptionsFor(binary),
 		});
 		const status = JSON.parse(stdout);

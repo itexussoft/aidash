@@ -233,6 +233,17 @@ console.log('\nsession scanning and moving');
 	const project = view.projects.find((p) => p.key === PROJECT);
 	check('one project row spans both accounts', Boolean(project?.byRoot.a && project?.byRoot.b));
 	check('both roots reported', view.roots.length === 2);
+
+	// The trap: Claude Code derives its keychain entry from CLAUDE_CONFIG_DIR,
+	// so setting the variable to the default directory makes it look for a
+	// suffixed entry that does not exist — and a signed-in account reports
+	// itself signed out.
+	const { claudeEnv, keychainService, DEFAULT_CONFIG_DIR } = await import('./src/claude-config.js');
+	check('default directory runs with no CLAUDE_CONFIG_DIR', Object.keys(claudeEnv(DEFAULT_CONFIG_DIR)).length === 0);
+	check('other directories do set it', claudeEnv('/tmp/other').CLAUDE_CONFIG_DIR === '/tmp/other');
+	check('default keychain entry is unsuffixed', keychainService(DEFAULT_CONFIG_DIR) === 'Claude Code-credentials');
+	check('other directories get a hashed suffix', /^Claude Code-credentials-[0-9a-f]{8}$/.test(keychainService('/tmp/other')));
+	check('the suffix distinguishes directories', keychainService('/tmp/a') !== keychainService('/tmp/b'));
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');
