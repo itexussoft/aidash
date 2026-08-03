@@ -46,6 +46,9 @@
 	--step-4: 16px;
 	--step-5: 24px;
 	--step-6: 32px;
+
+	/* Height of the macOS title bar strip. */
+	--title-bar: 34px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -86,8 +89,9 @@
 body {
 	margin: 0;
 	/* No horizontal padding here: the pinned bar has to span edge to edge, so
-	   the pages carry their own gutters instead. */
-	padding: 0 0 var(--step-6);
+	   the pages carry their own gutters instead. The top gap clears the title
+	   bar strip, which is fixed rather than in flow. */
+	padding: var(--title-bar) 0 var(--step-6);
 	background: var(--bg);
 	color: var(--fg);
 	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
@@ -102,23 +106,46 @@ body {
 	border-radius: var(--radius-sm);
 }
 
-/* Room for the traffic lights under the hidden macOS title bar. */
+/*
+ * The macOS title bar area: room for the traffic lights, and the handle for
+ * moving the window.
+ *
+ * Fixed rather than in flow, and deliberately not a child of the pinned bar —
+ * Chromium works out draggable regions while painting, and one nested inside a
+ * sticky element never makes it into that map, so the window cannot be moved at
+ * all. It also has to be opaque, since content now scrolls beneath it.
+ */
 .drag-region {
-	height: 34px;
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: var(--title-bar);
+	background: var(--bg);
+	z-index: 30;
 	-webkit-app-region: drag;
 }
 
 /*
  * Pinned so the tabs and any notification stay reachable however far the
- * project list is scrolled. Opaque, or the content would show through as it
- * passes underneath.
+ * project list is scrolled — just below the title bar strip, which is fixed.
+ * Opaque, or content would show through as it passes underneath.
  */
 .app-bar {
 	position: sticky;
-	top: 0;
+	top: var(--title-bar);
 	z-index: 20;
 	background: var(--bg);
 	padding: 0 var(--step-5);
+}
+
+/* Controls stay clickable wherever a draggable region reaches. */
+button,
+input,
+a,
+summary,
+.session {
+	-webkit-app-region: no-drag;
 }
 
 .page,

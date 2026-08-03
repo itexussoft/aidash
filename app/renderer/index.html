@@ -10,8 +10,12 @@
 	<body>
 		<!-- Pinned: the tabs and any notification stay reachable however far the
 		     project list is scrolled. -->
+		<!-- Outside the pinned bar on purpose: Chromium collects draggable regions
+		     during paint, and one nested inside a sticky element is missed, which
+		     leaves the window immovable. -->
+		<div class="drag-region"></div>
+
 		<header class="app-bar">
-			<div class="drag-region"></div>
 			<nav class="tabs">
 				<button class="tab chosen" data-tab="usage">Usage</button>
 				<button class="tab" data-tab="utils">Local Sessions</button>
