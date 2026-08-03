@@ -58,7 +58,17 @@ jobs:
           # otherwise stops on this runner to look for an identity it will
           # not find.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'windows-latest' && 'false' || 'true' }}
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        # bash on both runners, so the failure handling is written once.
+        shell: bash
+        # Report first, because job logs need admin rights on the repository:
+        # without this a signing failure is a red cross with no reason attached.
+        # Whether the secrets are even set is visible here and nowhere else.
+        run: |
+          set -o pipefail
+          if ! npx electron-builder ${{ matrix.args }} --publish never 2>&1 | tee build.log; then
+            echo "::error title=electron-builder failed::$(tail -n 25 build.log | tr '\n' ' ' | cut -c1-900)"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

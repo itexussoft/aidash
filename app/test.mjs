@@ -232,7 +232,11 @@ console.log('\naccount store');
 	check('credentials live under the account id', store.dirFor('x').endsWith(join('accounts', 'x')));
 
 	await store.save();
-	const reloaded = new AccountStore(store.file.replace(/\/accounts\.json$/, ''));
+	// `dirname`, not a regex on the path: a `/accounts\.json$/ ` pattern never
+	// matched on Windows, so this reconstructed the store rooted at the file
+	// itself and `load()` died trying to mkdir over it.
+	const { dirname } = await import('node:path');
+	const reloaded = new AccountStore(dirname(store.file));
 	await reloaded.load();
 	check('state survives a reload', reloaded.state.accounts.length === 1);
 
