@@ -309,5 +309,87 @@ console.log('\nsession index');
 	check('the suffix distinguishes directories', keychainService('/tmp/a') !== keychainService('/tmp/b'));
 }
 
+/* ------------------------------------------------------ across the tools */
+
+console.log('\ncross-tool copy');
+{
+	const { DatabaseSync } = await import('node:sqlite');
+	const { mkdtemp, mkdir, readFile, readdir } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const { join } = await import('node:path');
+	const codex = await import('./src/codex-sessions.js');
+	const { readConversation, importedTitle, preamble, toMarkdown } = await import('./src/transfer.js');
+	const { importConversation: intoClaude } = await import('./src/sessions.js');
+
+	const home = await mkdtemp(join(tmpdir(), 'aidash-codex-'));
+	const db = new DatabaseSync(join(home, 'state_5.sqlite'));
+	db.exec(
+		`CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL, source TEXT NOT NULL, model_provider TEXT NOT NULL, cwd TEXT NOT NULL,
+			title TEXT NOT NULL, sandbox_policy TEXT NOT NULL, approval_mode TEXT NOT NULL,
+			tokens_used INTEGER NOT NULL DEFAULT 0, has_user_event INTEGER NOT NULL DEFAULT 0,
+			archived INTEGER NOT NULL DEFAULT 0, git_branch TEXT, cli_version TEXT NOT NULL DEFAULT '',
+			first_user_message TEXT NOT NULL DEFAULT '', memory_mode TEXT NOT NULL DEFAULT 'enabled', model TEXT,
+			created_at_ms INTEGER, updated_at_ms INTEGER, preview TEXT NOT NULL DEFAULT '',
+			recency_at INTEGER NOT NULL DEFAULT 0, history_mode TEXT NOT NULL DEFAULT 'legacy', name TEXT);`,
+	);
+	db.close();
+
+	const conversation = {
+		title: importedTitle('claude', 'Fix the bug'),
+		cwd: '/Users/test/proj',
+		messages: [
+			{ role: 'user', text: 'fix it' },
+			{ role: 'assistant', text: 'fixed' },
+		],
+		preamble: preamble('claude', 'Fix the bug'),
+	};
+
+	const { id, rolloutPath } = await codex.importConversation(home, conversation);
+	const listed = await codex.listSessions(home);
+	check('the copy appears in Codex', listed.length === 1);
+	check('its title names where it came from', listed[0].title === 'Claude imported: Fix the bug');
+
+	const rollout = await readFile(rolloutPath, 'utf8');
+	check('the rollout opens with session_meta', JSON.parse(rollout.split('\n')[0]).type === 'session_meta');
+	check('the note about what was left out comes first', rollout.includes('imported from Claude Code'));
+
+	// Reading it back with the same parser is what proves the written shape is
+	// one the tool can actually consume.
+	const back = await readConversation(rolloutPath, 'codex');
+	check('Codex can read back what we wrote', back.messages.length === 3);
+	check('roles survive the round trip', back.messages[1].role === 'user' && back.messages[2].role === 'assistant');
+	check('text survives unaltered', back.messages[2].text === 'fixed');
+
+	await codex.renameSession(home, id, 'Renamed');
+	check('renaming a Codex session takes', (await codex.listSessions(home))[0].title === 'Renamed');
+	await codex.deleteSession(home, id);
+	check('deleting removes it', (await codex.listSessions(home)).length === 0);
+
+	const account = join(home, 'account');
+	const transcripts = join(home, 'transcripts');
+	await mkdir(account, { recursive: true });
+	await mkdir(transcripts, { recursive: true });
+	const written = await intoClaude(
+		account,
+		{
+			title: importedTitle('codex', 'Ship it'),
+			cwd: '/Users/test/proj',
+			messages: [{ role: 'user', text: 'ship' }],
+			preamble: preamble('codex', 'Ship it'),
+		},
+		transcripts,
+	);
+	const transcript = await readFile(written.transcript, 'utf8');
+	check('the Claude transcript is written', transcript.includes('ship'));
+	check('its title is recorded', JSON.parse(transcript.split('\n')[0]).aiTitle === 'Codex imported: Ship it');
+	check('an index entry makes it listable', (await readdir(account)).length === 1);
+	check('Claude can read back what we wrote', (await readConversation(written.transcript, 'claude')).messages.length === 2);
+
+	check('the preamble admits what is missing', /Tool calls[\s\S]*not carried across/.test(preamble('claude', 'X')));
+	const markdown = toMarkdown({ title: 'T', cwd: '/c', messages: [{ role: 'user', text: 'a' }] }, 'claude');
+	check('the export says it is dialogue only', markdown.startsWith('# T') && markdown.includes('Dialogue only'));
+}
+
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);

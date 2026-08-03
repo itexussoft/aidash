@@ -39,6 +39,7 @@ import { randomUUID } from 'node:crypto';
 import { locate, spawnOptionsFor } from './locate.js';
 import { DEFAULT_CONFIG_DIR, claudeEnv } from './claude-config.js';
 import { readClaudeCredentials } from './keychain.js';
+import { listSessions as listCodexSessions, DEFAULT_CODEX_HOME } from './codex-sessions.js';
 
 const run = promisify(execFile);
 
@@ -188,6 +189,15 @@ async function transcriptFacts(cliSessionId, cwd, transcriptsRoot = TRANSCRIPTS)
 export const UNINDEXED = 'unindexed';
 
 /**
+ * The Codex column.
+ *
+ * One column, not one per account: nothing in Codex's storage records an
+ * account, so every session in a CODEX_HOME is visible to whichever account is
+ * signed in.
+ */
+export const CODEX = 'codex';
+
+/**
  * Reads what an index entry needs from a transcript.
  *
  * Only the head is parsed — transcripts reach tens of megabytes, and the title,
@@ -313,6 +323,112 @@ export async function adoptSession({ transcriptFile, toAccountPath }) {
 	return { adopted: described.cliSessionId, to: toAccountPath };
 }
 
+/** Changes what a session is called, in the entry that names it. */
+export async function renameSession(entryFile, title) {
+	const next = String(title ?? '').trim();
+	if (!next) throw new Error('a name is required');
+
+	const entry = await readEntry(entryFile);
+	if (!entry) throw new Error('no such session');
+
+	const { file, ...rest } = entry;
+	await writeFile(entryFile, JSON.stringify({ ...rest, title: next, titleSource: 'user' }, null, 2));
+}
+
+/**
+ * Removes a session: the entry that lists it and the transcript it points at.
+ *
+ * Both, deliberately — deleting only the entry would leave the conversation on
+ * disk, unlisted, which is a state nobody asked for and nothing would explain.
+ */
+export async function deleteSession(entryFile) {
+	const entry = await readEntry(entryFile);
+	if (!entry) throw new Error('no such session');
+
+	const { transcript } = await transcriptFacts(entry.cliSessionId, entry.cwd);
+	await rm(entryFile, { force: true });
+	if (transcript) await rm(transcript, { force: true });
+}
+
+/**
+ * Writes a conversation carried over from Codex as a Claude session.
+ *
+ * The transcript is synthesised from the dialogue alone; the index entry is
+ * what makes the desktop app willing to list it.
+ */
+export async function importConversation(toAccountPath, { title, cwd, messages, preamble }, transcriptsRoot = TRANSCRIPTS) {
+	if (!(await exists(toAccountPath))) throw new Error('the destination account has no session store yet');
+
+	const sessionId = randomUUID();
+	const workingDir = cwd ?? homedir();
+	const folder = join(transcriptsRoot, encodeCwd(workingDir));
+	await mkdir(folder, { recursive: true });
+
+	const stamp = new Date().toISOString();
+	const lines = [JSON.stringify({ type: 'ai-title', aiTitle: title, sessionId })];
+
+	let parentUuid = null;
+	const record = (role, text, at) => {
+		const uuid = randomUUID();
+		const message =
+			role === 'assistant'
+				? { role, content: [{ type: 'text', text }], model: 'imported' }
+				: { role, content: text };
+		const line = {
+			parentUuid,
+			isSidechain: false,
+			type: role,
+			message,
+			uuid,
+			timestamp: at ?? stamp,
+			cwd: workingDir,
+			sessionId,
+			userType: 'external',
+			version: 'imported',
+		};
+		parentUuid = uuid;
+		return JSON.stringify(line);
+	};
+
+	lines.push(record('user', preamble, stamp));
+	for (const m of messages) lines.push(record(m.role, m.text, m.at));
+
+	const transcript = join(folder, `${sessionId}.jsonl`);
+	await writeFile(transcript, `${lines.join('\n')}\n`);
+
+	const entryId = `local_${randomUUID()}`;
+	const now = Date.now();
+	await writeFile(
+		join(toAccountPath, `${entryId}.json`),
+		JSON.stringify(
+			{
+				sessionId: entryId,
+				cliSessionId: sessionId,
+				cwd: workingDir,
+				originCwd: workingDir,
+				createdAt: now,
+				lastActivityAt: now,
+				lastFocusedAt: now,
+				model: null,
+				isArchived: false,
+				title,
+				titleSource: 'user',
+				writtenBranches: [],
+				enabledMcpTools: {},
+				remoteMcpServersConfig: [],
+				alwaysAllowedReasons: [],
+				sessionPermissionUpdates: [],
+				bridgeSessionIds: [],
+				spawnSeed: {},
+			},
+			null,
+			2,
+		),
+	);
+
+	return { cliSessionId: sessionId, transcript };
+}
+
 /**
  * The whole picture: accounts across the top, projects down the side.
  *
@@ -393,6 +509,30 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 	const unindexed = projects.reduce((n, p) => n + (p.byAccount[UNINDEXED]?.length ?? 0), 0);
 
 	return { accounts, projects, indexRoot, unindexed };
+}
+
+/** Everything, with Codex folded in as its own column. */
+export async function scanEverything(configDirs = [DEFAULT_CONFIG_DIR], codexHome = DEFAULT_CODEX_HOME) {
+	const view = await scanAll(configDirs);
+	const byProject = new Map(view.projects.map((p) => [p.cwd, p]));
+
+	let codexCount = 0;
+	for (const session of await listCodexSessions(codexHome)) {
+		if (!session.cwd) continue;
+		codexCount++;
+		if (!byProject.has(session.cwd)) byProject.set(session.cwd, { cwd: session.cwd, byAccount: {} });
+		(byProject.get(session.cwd).byAccount[CODEX] ??= []).push({ ...session, tool: 'codex' });
+	}
+
+	for (const project of byProject.values()) {
+		for (const list of Object.values(project.byAccount)) list.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
+	}
+
+	return {
+		...view,
+		projects: [...byProject.values()].sort((a, b) => a.cwd.localeCompare(b.cwd)),
+		codex: { home: codexHome, sessions: codexCount },
+	};
 }
 
 /**

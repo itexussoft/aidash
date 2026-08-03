@@ -10,7 +10,23 @@ import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AccountStore } from './src/accounts.js';
-import { scanAll, moveSession, adoptSession } from './src/sessions.js';
+import {
+	scanEverything,
+	moveSession,
+	adoptSession,
+	renameSession,
+	deleteSession,
+	importConversation as importIntoClaude,
+	CODEX,
+} from './src/sessions.js';
+import {
+	renameSession as renameCodexSession,
+	deleteSession as deleteCodexSession,
+	importConversation as importIntoCodex,
+	DEFAULT_CODEX_HOME,
+} from './src/codex-sessions.js';
+import { readConversation, importedTitle, preamble, toMarkdown } from './src/transfer.js';
+import { writeFile } from 'node:fs/promises';
 import { checkForUpdate } from './src/updates.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -144,18 +160,90 @@ ipcMain.handle('accounts:cancelAdd', () => {
 // sessions themselves come from the desktop app's index.
 const configDirs = () => store.claudeConfigDirs();
 
-ipcMain.handle('sessions:scan', () => scanAll(configDirs()));
+ipcMain.handle('sessions:scan', () => scanEverything(configDirs()));
 
 ipcMain.handle('sessions:move', async (_event, request) => {
 	await moveSession(request);
-	return scanAll(configDirs());
+	return scanEverything(configDirs());
 });
 
 // Giving an account a transcript nothing had claimed: the desktop app lists
 // only what its index names, so this writes the entry it was missing.
 ipcMain.handle('sessions:adopt', async (_event, request) => {
 	await adoptSession(request);
-	return scanAll(configDirs());
+	return scanEverything(configDirs());
+});
+
+ipcMain.handle('sessions:rename', async (_event, { tool, entryFile, threadId, title }) => {
+	if (tool === CODEX) await renameCodexSession(DEFAULT_CODEX_HOME, threadId, title);
+	else await renameSession(entryFile, title);
+	return scanEverything(configDirs());
+});
+
+ipcMain.handle('sessions:delete', async (_event, { tool, entryFile, threadId, title }) => {
+	const { response } = await dialog.showMessageBox(mainWindow, {
+		type: 'warning',
+		buttons: ['Delete', 'Cancel'],
+		defaultId: 1,
+		cancelId: 1,
+		message: `Delete "${title}"?`,
+		detail: 'The conversation and its transcript are removed from this machine. This cannot be undone.',
+	});
+	if (response !== 0) return null;
+
+	if (tool === CODEX) await deleteCodexSession(DEFAULT_CODEX_HOME, threadId);
+	else await deleteSession(entryFile);
+	return scanEverything(configDirs());
+});
+
+ipcMain.handle('sessions:export', async (_event, { tool, transcript, title }) => {
+	if (!transcript) throw new Error('this session has no transcript on disk to export');
+
+	const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+		title: 'Export session',
+		defaultPath: `${String(title ?? 'session').replace(/[/\\:]/g, '-').slice(0, 80)}.md`,
+		filters: [{ name: 'Markdown', extensions: ['md'] }],
+	});
+	if (canceled || !filePath) return null;
+
+	const conversation = await readConversation(transcript, tool === CODEX ? 'codex' : 'claude');
+	await writeFile(filePath, toMarkdown({ ...conversation, title: title ?? conversation.title }, tool === CODEX ? 'codex' : 'claude'));
+	return { path: filePath, messages: conversation.messages.length };
+});
+
+/**
+ * Copies a conversation to the other tool.
+ *
+ * Confirmed first, because it is not the move the same gesture performs between
+ * accounts: the formats differ, so only the dialogue crosses over.
+ */
+ipcMain.handle('sessions:transfer', async (_event, { fromTool, transcript, title, toAccountPath }) => {
+	const source = fromTool === CODEX ? 'codex' : 'claude';
+	const target = source === 'codex' ? 'Claude Code' : 'Codex';
+
+	const { response } = await dialog.showMessageBox(mainWindow, {
+		type: 'warning',
+		buttons: [`Copy to ${target}`, 'Cancel'],
+		defaultId: 1,
+		cancelId: 1,
+		message: `Copy this session to ${target}?`,
+		detail:
+			'The two tools store conversations differently, so this copies rather than moves, and only the dialogue crosses over. ' +
+			'Tool calls, their results and reasoning are not carried across — the files on disk remain the record of what was done. ' +
+			'The original session stays where it is.',
+	});
+	if (response !== 0) return null;
+
+	if (!transcript) throw new Error('this session has no transcript on disk to copy');
+
+	const conversation = await readConversation(transcript, source);
+	const name = importedTitle(source, title ?? conversation.title);
+	const payload = { ...conversation, title: name, preamble: preamble(source, title ?? conversation.title) };
+
+	if (source === 'codex') await importIntoClaude(toAccountPath, payload);
+	else await importIntoCodex(DEFAULT_CODEX_HOME, payload);
+
+	return scanEverything(configDirs());
 });
 
 ipcMain.handle('accounts:confirmRemove', async (_event, label) => {

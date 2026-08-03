@@ -61,6 +61,11 @@
 				whoever is signed in. Sessions started there can therefore be missing from the desktop app altogether — those appear
 				under <strong>Only in the CLI</strong>, and dragging one onto an account makes the desktop app list it too.
 			</p>
+			<p class="lede">
+				<strong>Codex</strong> is one column rather than one per account: nothing in its storage records an account, so every
+				session is visible to whichever account is signed in. Dragging between Codex and Claude <em>copies</em> the dialogue
+				instead of moving it — the two describe conversations differently — and asks first.
+			</p>
 
 			<div id="roots" class="roots"></div>
 			<div id="projects"></div>
@@ -71,6 +76,20 @@
 				<p class="hint">Accounts are read from Claude Code's own session index. Add a config folder above if an account here is showing as an unnamed id.</p>
 			</section>
 		</section>
+
+		<dialog id="session-rename-dialog">
+			<form method="dialog">
+				<h2>Rename session</h2>
+				<label for="session-rename-input">Name</label>
+				<input id="session-rename-input" autocomplete="off" spellcheck="false" required />
+				<p class="hint">Only the title changes — the conversation itself is untouched.</p>
+				<p class="error" id="session-rename-error" hidden></p>
+				<menu>
+					<button type="button" id="session-rename-cancel">Cancel</button>
+					<button type="button" id="session-rename-save" class="primary">Save</button>
+				</menu>
+			</form>
+		</dialog>
 
 		<dialog id="rename-dialog">
 			<form method="dialog">

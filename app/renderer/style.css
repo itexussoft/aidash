@@ -650,3 +650,45 @@ code {
 	text-decoration: underline;
 	display: block;
 }
+
+/* Codex sits apart from the Claude accounts: it is a tool, not an account. */
+.col.codex {
+	border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
+}
+.col.over.copy {
+	border-color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 8%, var(--card));
+}
+
+.s-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.4rem;
+}
+.s-actions {
+	display: flex;
+	gap: 0.25rem;
+	opacity: 0;
+	transition: opacity 0.12s;
+	flex-shrink: 0;
+}
+.session:hover .s-actions,
+.session:focus-within .s-actions {
+	opacity: 1;
+}
+.s-act {
+	font-size: 0.72rem;
+	line-height: 1;
+	padding: 0.1rem 0.2rem;
+	border-radius: 4px;
+	color: var(--muted);
+	cursor: pointer;
+}
+.s-act:hover {
+	color: var(--fg);
+	background: var(--track);
+}
+.s-act[data-act='delete']:hover {
+	color: var(--crit);
+}
