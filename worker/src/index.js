@@ -18,7 +18,7 @@ const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`
 
 // The one line `npm run release` rewrites. Everything below derives from it, so
 // a bump cannot leave a download link pointing at the previous version's files.
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 
 /**
  * Where each platform's installer lives, under the names electron-builder gives
