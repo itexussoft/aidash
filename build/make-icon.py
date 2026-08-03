@@ -2,10 +2,13 @@
 """
 Draws the application icon.
 
-The mark is the app's own meters: three tracks at different fills, with the one
-closest to exhaustion picked out in the Itexus green. It reads as "how much is
-left" at any size, and reuses the exact palette of the landing page so the two
-are recognisably the same product.
+One thick gauge arc: a proportion, which is what a quota is. It reads at every
+size a dock or taskbar asks for.
+
+Two earlier attempts failed for opposite reasons. Three horizontal bars looked
+like a hamburger menu — a control rather than a measure. Two concentric arcs
+said "several quotas", which is truer, but the inner ring turned to mush below
+32px, and that is exactly the size an icon spends its life at.
 
     python3 build/make-icon.py
 
@@ -19,68 +22,56 @@ from pathlib import Path
 SIZE = 1024
 BUILD = Path(__file__).parent
 
-INK = (5, 19, 32, 255)  # #051320 — same as the landing hero
+INK = (5, 19, 32, 255)  # #051320 — the landing hero
 GREEN = (37, 187, 77, 255)  # #25BB4D — the Itexus accent
 WHITE = (255, 255, 255, 255)
 
 
 def over(colour, alpha, base=INK):
     """
-    Blends `colour` onto `base` at `alpha`, returning an opaque value.
+    Blends `colour` onto `base`, returning an opaque value.
 
     ImageDraw writes pixels rather than compositing them, so a translucent fill
     replaces the background — alpha and all — instead of sitting on top of it.
-    Pre-blending is what keeps a dim track dim rather than punching a
-    transparent hole through the icon.
     """
     return tuple(round(b + (c - b) * alpha) for c, b in zip(colour[:3], base[:3])) + (255,)
 
 
-TRACK = over(WHITE, 0.16)  # unfilled remainder
-DIM = over(WHITE, 0.55)  # a bar with plenty of headroom
+TRACK = over(WHITE, 0.14)
 
-# Fractions used up. The green one is nearly full: the icon should read as a
-# warning at a glance, which is the app's whole job.
-BARS = [
-    (0.52, WHITE),
-    (0.88, GREEN),
-    (0.30, DIM),
+# Arcs start at twelve o'clock and run clockwise, so the filled part reads the
+# way a gauge does.
+START = -90
+
+# Insets are measured from the canvas edge, and each ring needs its own stroke
+# plus a visible gap before the next one starts — otherwise the inner arc has no
+# hole left and renders as a disc.
+# A single ring, thick enough to survive downsampling. The gap left unfilled is
+# the point of the mark, so it has to stay obvious at 16px.
+RINGS = [
+    {"inset": 0.255, "stroke": 0.115, "fraction": 0.7, "colour": GREEN},
 ]
 
 
-def rounded(draw, box, radius, fill):
-    draw.rounded_rectangle(box, radius=radius, fill=fill)
-
-
 def build_icon(size=SIZE):
-    # Drawn at 4x and downsampled: PIL has no antialiasing of its own, and the
-    # bar caps look ragged without it.
+    # Drawn at 4x and downsampled: PIL does no antialiasing of its own, and arc
+    # ends look ragged without it.
     scale = 4
     s = size * scale
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # macOS rounds its own corners, but the same file ships to Windows and
-    # Linux, so the shape is part of the artwork.
+    # macOS rounds its own corners, but the same artwork ships to Windows and
+    # Linux, so the shape is part of the icon.
     margin = int(s * 0.085)
-    rounded(draw, (margin, margin, s - margin, s - margin), radius=int(s * 0.22), fill=INK)
+    draw.rounded_rectangle((margin, margin, s - margin, s - margin), radius=int(s * 0.22), fill=INK)
 
-    inner = int(s * 0.20)
-    left = inner
-    right = s - inner
-    span = right - left
-
-    bar_h = int(s * 0.105)
-    gap = int(s * 0.075)
-    total = len(BARS) * bar_h + (len(BARS) - 1) * gap
-    top = (s - total) // 2
-
-    for i, (fraction, colour) in enumerate(BARS):
-        y = top + i * (bar_h + gap)
-        radius = bar_h // 2
-        rounded(draw, (left, y, right, y + bar_h), radius, TRACK)
-        filled = max(bar_h, int(span * fraction))
-        rounded(draw, (left, y, left + filled, y + bar_h), radius, colour)
+    for ring in RINGS:
+        pad = int(s * ring["inset"])
+        stroke = int(s * ring["stroke"])
+        box = (pad, pad, s - pad, s - pad)
+        draw.arc(box, 0, 360, fill=TRACK, width=stroke)
+        draw.arc(box, START, START + 360 * ring["fraction"], fill=ring["colour"], width=stroke)
 
     return img.resize((size, size), Image.LANCZOS)
 
@@ -88,11 +79,8 @@ def build_icon(size=SIZE):
 def main():
     icon = build_icon()
     icon.save(BUILD / "icon.png")
-
-    # Windows wants every size inside one file.
     icon.save(BUILD / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 
-    # macOS: an iconset directory that iconutil turns into .icns.
     iconset = BUILD / "icon.iconset"
     iconset.mkdir(exist_ok=True)
     for px in (16, 32, 64, 128, 256, 512):

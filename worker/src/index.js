@@ -11,18 +11,28 @@ import { renderLanding } from './landing.js';
 // Bumped together with the app's version in package.json when a build is
 // published. Kept here rather than in a database because it changes exactly as
 // often as this Worker is deployed.
+const PROJECT = 1189;
+const HOST = 'https://gitlab.itexus.com';
+const REPO = `${HOST}/tools/aidash`;
+
+/** Direct, public URLs into the generic package registry. */
+const asset = (version, file) => `${HOST}/api/v4/projects/${PROJECT}/packages/generic/aidash/${version}/${file}`;
+
+/**
+ * The published release.
+ *
+ * Bumped together with package.json by `npm run release`, which uploads the
+ * artefacts under exactly these names. A platform absent from `downloads` is
+ * shown on the landing as not yet built rather than linked to a 404.
+ */
 const RELEASE = {
 	version: '0.1.0',
 	notes: null,
 	url: 'https://aidash.itex.us',
-	repo: 'https://gitlab.itexus.com/tools/aidash',
-	// Per-platform builds, keyed the way the app asks for them. The permalink
-	// always points at the newest release, so publishing does not require
-	// editing these.
+	repo: REPO,
 	downloads: {
-		'darwin-arm64': 'https://gitlab.itexus.com/tools/aidash/-/releases/permalink/latest',
-		'darwin-x64': 'https://gitlab.itexus.com/tools/aidash/-/releases/permalink/latest',
-		darwin: 'https://gitlab.itexus.com/tools/aidash/-/releases/permalink/latest',
+		'darwin-arm64': asset('0.1.0', 'aidash-0.1.0-arm64.dmg'),
+		'darwin-x64': asset('0.1.0', 'aidash-0.1.0.dmg'),
 	},
 };
 
@@ -44,7 +54,7 @@ export default {
 		if (pathname === '/' || pathname === '/index.html') {
 			const html = renderLanding({
 				version: RELEASE.version,
-				downloadUrl: RELEASE.downloads.darwin,
+				downloads: RELEASE.downloads,
 				repoUrl: RELEASE.repo,
 			});
 			return new Response(html, {

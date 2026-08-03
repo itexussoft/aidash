@@ -19,6 +19,7 @@
 			<nav class="tabs">
 				<button class="tab chosen" data-tab="usage">Usage</button>
 				<button class="tab" data-tab="utils">Local Sessions</button>
+				<button class="tab" data-tab="about">About</button>
 				<output id="toast" class="toast" aria-live="polite"></output>
 			</nav>
 		</header>
@@ -97,6 +98,62 @@
 				<p>Claude Code has not recorded any sessions on this machine yet.</p>
 				<p class="hint">Accounts are read from Claude Code's own session index. Add a config folder above if an account here is showing as an unnamed id.</p>
 			</section>
+		</section>
+
+		<!-- ------------------------------------------------------------ About -->
+		<section class="page" data-page="about" hidden>
+			<header class="page-head">
+				<div class="head-title"><h1>About</h1></div>
+			</header>
+
+			<div class="about">
+				<div class="about-id">
+					<svg class="about-mark" viewBox="0 0 100 100" aria-hidden="true">
+						<rect width="100" height="100" rx="24" fill="#051320" />
+						<circle cx="50" cy="50" r="24" fill="none" stroke="#26333f" stroke-width="11.5" />
+						<path d="M 50 26 A 24 24 0 1 1 26.5 55.5" fill="none" stroke="#25bb4d" stroke-width="11.5" />
+					</svg>
+					<div>
+						<h2>aidash</h2>
+						<p class="about-version">Version <span id="about-version">—</span> · <span id="about-platform">—</span></p>
+						<p class="hint">Quota usage across your Claude and Codex accounts, and a tool for moving Claude Code sessions between them.</p>
+					</div>
+				</div>
+
+				<div class="about-links">
+					<button class="link" data-url="https://aidash.itex.us">Website</button>
+					<button class="link" data-url="https://gitlab.itexus.com/tools/aidash">Source code</button>
+					<button class="link" data-url="https://gitlab.itexus.com/tools/aidash/-/releases">Releases</button>
+					<button class="link" id="about-check">Check for updates</button>
+				</div>
+
+				<h3 class="about-h">Disclaimer</h3>
+				<div class="about-legal">
+					<p>
+						This software is provided "as is", without warranty of any kind, express or implied, including but not
+						limited to the warranties of merchantability, fitness for a particular purpose and non-infringement. In no
+						event shall the authors or Itexus be liable for any claim, damages or other liability, whether in an action
+						of contract, tort or otherwise, arising from, out of or in connection with the software or the use or other
+						dealings in the software.
+					</p>
+					<p>
+						<strong>Not affiliated with Anthropic or OpenAI.</strong> aidash is an independent tool. Claude, Claude Code,
+						Codex and ChatGPT are the property of their respective owners, and neither company endorses, supports or is
+						responsible for this software.
+					</p>
+					<p>
+						<strong>Session handling is unofficial.</strong> Neither Claude Code nor Codex documents how conversations are
+						stored on disk. That behaviour was determined by reading the files, and either vendor may change it at any
+						time without notice. Moving, copying, renaming and deleting sessions edits those files directly, and deletion
+						cannot be undone. Keep your own backup of anything you cannot afford to lose.
+					</p>
+					<p>
+						<strong>Figures come from the providers.</strong> Quota readings are whatever Anthropic and OpenAI report at
+						the moment they are asked, and are shown unaltered. They may lag, round, or change meaning. Do not rely on
+						them for billing decisions.
+					</p>
+				</div>
+			</div>
 		</section>
 
 		<dialog id="session-rename-dialog">

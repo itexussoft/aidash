@@ -44,6 +44,44 @@ function severity(percent) {
 	return 'ok';
 }
 
+/**
+ * The bar's colour, as a continuous scale rather than three buckets.
+ *
+ * Three colours put 20% and 70% in the same green, which throws away most of
+ * what a bar is for. Hue slides from green through amber to red so a glance
+ * along a column of bars ranks them without reading a single number.
+ *
+ * The stops are uneven on purpose: the interesting part of the range is the top
+ * of it, so most of the hue travel happens after halfway.
+ */
+const HUE_STOPS = [
+	[0, 145],
+	[50, 110],
+	[75, 45],
+	[90, 22],
+	[100, 4],
+];
+
+export function barColour(percent) {
+	const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+
+	let hue = HUE_STOPS[HUE_STOPS.length - 1][1];
+	for (let i = 0; i < HUE_STOPS.length - 1; i++) {
+		const [from, hFrom] = HUE_STOPS[i];
+		const [to, hTo] = HUE_STOPS[i + 1];
+		if (pct <= to) {
+			hue = hFrom + ((hTo - hFrom) * (pct - from)) / (to - from);
+			break;
+		}
+	}
+
+	// Saturation rises with the reading so a nearly-full bar is the loudest
+	// thing on the card.
+	const saturation = 55 + pct * 0.22;
+	const lightness = 46 - pct * 0.04;
+	return `hsl(${hue.toFixed(0)} ${saturation.toFixed(0)}% ${lightness.toFixed(0)}%)`;
+}
+
 function meter(label, percent, resetAt, note, severityOverride) {
 	const raw = Number(percent) || 0;
 	const pct = Math.max(0, Math.min(100, raw));
@@ -59,9 +97,9 @@ function meter(label, percent, resetAt, note, severityOverride) {
     <div class="meter ${severityOverride ?? severity(raw)}">
       <div class="meter-head">
         <span class="meter-label">${escapeHtml(label)}</span>
-        <span class="meter-val">${shown}</span>
+        <span class="meter-val" data-colour="${barColour(raw)}">${shown}</span>
       </div>
-      <div class="bar"><i data-pct="${pct.toFixed(2)}"></i></div>
+      <div class="bar"><i data-pct="${pct.toFixed(2)}" data-colour="${barColour(raw)}"></i></div>
       <div class="meter-foot">
         ${resetMs ? `resets ${escapeHtml(relativeTime(resetMs))}` : ''}
         ${note ? `<span class="note">${escapeHtml(note)}</span>` : ''}
@@ -259,6 +297,10 @@ export function renderCard(account) {
 export function applyBarWidths(root = document) {
 	for (const fill of root.querySelectorAll('.bar i[data-pct]')) {
 		fill.style.width = `${fill.dataset.pct}%`;
+		fill.style.background = fill.dataset.colour;
+	}
+	for (const value of root.querySelectorAll('.meter-val[data-colour]')) {
+		value.style.color = value.dataset.colour;
 	}
 }
 

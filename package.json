@@ -14,7 +14,8 @@
     "test": "node app/test.mjs",
     "dist": "electron-builder",
     "site:dev": "wrangler dev --config worker/wrangler.toml",
-    "site:deploy": "wrangler deploy --config worker/wrangler.toml"
+    "site:deploy": "wrangler deploy --config worker/wrangler.toml",
+    "release": "node scripts/release.mjs"
   },
   "build": {
     "appId": "us.itex.aidash",

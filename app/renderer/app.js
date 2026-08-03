@@ -353,3 +353,26 @@ setInterval(() => {
 
 // Never blocks the window: an unreachable manifest simply means no banner.
 checkUpdate();
+
+/* ------------------------------------------------------------------- about */
+
+$('#about-version').textContent = state.version ?? '—';
+$('#about-platform').textContent = `${navigator.platform || 'unknown platform'}`;
+
+for (const link of document.querySelectorAll('.about-links .link[data-url]')) {
+	link.addEventListener('click', () => window.aidash.openUrl(link.dataset.url));
+}
+
+$('#about-check').addEventListener('click', async () => {
+	busy('Checking for updates…');
+	const update = await window.aidash.checkForUpdate();
+	if (!update) {
+		done('You are on the latest version');
+		return;
+	}
+	// Clearing the dismissal is the point of asking: an explicit check should
+	// bring back a banner the user waved away earlier.
+	localStorage.removeItem(DISMISSED_KEY);
+	await checkUpdate();
+	done(`Version ${update.version} is available`);
+});

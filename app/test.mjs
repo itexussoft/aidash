@@ -8,7 +8,7 @@
  * renderers are exercised against the real shapes rather than invented ones.
  */
 
-import { renderCard, refreshLabel, toEpochMs, relativeTime } from './renderer/render.js';
+import { renderCard, refreshLabel, toEpochMs, relativeTime, barColour } from './renderer/render.js';
 
 let failures = 0;
 const check = (name, cond) => {
@@ -95,7 +95,7 @@ const claudePayload = {
 };
 
 const claudeCard = card({ provider: 'claude', label: 'Claude', email: 'claude.dev@itexus.com', plan: 'max', payload: claudePayload, lastOkAt: Date.now() });
-const claudeValues = [...claudeCard.matchAll(/meter-val">([^<]+)</g)].map((m) => m[1]);
+const claudeValues = [...claudeCard.matchAll(/class="meter-val"[^>]*>([^<]+)</g)].map((m) => m[1]);
 
 check('every limit rendered', claudeCard.includes('weekly all') && claudeCard.includes('session') && claudeCard.includes('weekly scoped'));
 // The trap this guards: `utilization: 1` means one percent, not a full bar.
@@ -154,7 +154,7 @@ console.log('\nmeter fill widths');
 // The regression this guards: an inline style attribute is dropped by the
 // page's `style-src 'self'` policy, and .bar i has no width in CSS, so every
 // fill silently rendered as a full bar.
-check('fill carries its width as data, not as an inline style', /<i data-pct="[\d.]+"><\/i>/.test(codexCard));
+check('fill carries its width as data, not as an inline style', /<i data-pct="[\d.]+" data-colour="[^"]+"><\/i>/.test(codexCard));
 check('no inline style attributes anywhere in a card', !/\sstyle="/.test(codexCard));
 const pcts = [...claudeCard.matchAll(/data-pct="([\d.]+)"/g)].map((m) => Number(m[1]));
 check('widths match the reported percentages', JSON.stringify(pcts) === JSON.stringify([56, 46, 1]));
@@ -166,6 +166,18 @@ const overCard = card({
 	lastOkAt: Date.now(),
 });
 check('a bar past 100% is capped for the fill', /data-pct="100/.test(overCard));
+
+// Three buckets put 20% and 70% in the same green, which wastes most of what a
+// bar is for; the scale is continuous so a column of them ranks at a glance.
+console.log('\nmeter colour scale');
+const hue = (c) => Number(c.match(/hsl\((\d+)/)[1]);
+check('empty reads green', hue(barColour(0)) > 130);
+check('halfway has moved off green', hue(barColour(50)) < hue(barColour(0)));
+check('three quarters is amber', hue(barColour(75)) > 30 && hue(barColour(75)) < 60);
+check('full reads red', hue(barColour(100)) < 12);
+check('hue only ever falls', [0, 20, 40, 60, 80, 100].every((p, i, a) => i === 0 || hue(barColour(p)) <= hue(barColour(a[i - 1]))));
+check('past 100% clamps rather than wrapping back to green', barColour(887) === barColour(100));
+check('nonsense is treated as empty', barColour(null) === barColour(0));
 check('but the true figure is still shown', overCard.includes('887%'));
 
 /* -------------------------------------------------------------- the store */
