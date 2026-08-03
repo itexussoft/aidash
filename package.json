@@ -58,6 +58,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "dmg": {
+      "sign": true
     }
   },
   "devDependencies": {

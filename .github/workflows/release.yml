@@ -74,6 +74,45 @@ jobs:
             exit 1
           fi
 
+      # electron-builder notarizes and staples the .app, but not the disk image
+      # it then wraps it in. That left the shipped dmg with no ticket of its own,
+      # so macOS still questioned the download even though the app inside was
+      # fine. Notarizing the container too is what removes the last prompt.
+      #
+      # This runs before the upload on purpose: stapling rewrites the file, so a
+      # dmg uploaded earlier would be the unstapled one.
+      - name: Notarize and staple the disk images
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          for dmg in dist/*.dmg; do
+            echo "→ $dmg"
+            if ! xcrun notarytool submit "$dmg" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait 2>&1 | tee notarize.log; then
+              # Apple's rejection reason lives in the log it keeps, not in the
+              # submit output, so fetch it before failing.
+              id=$(grep -oE '\b[0-9a-f-]{36}\b' notarize.log | head -1)
+              [ -n "$id" ] && xcrun notarytool log "$id" \
+                --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" 2>&1 | tail -c 700 > reason.log || true
+              echo "::error title=notarization failed::$(tail -c 500 notarize.log | tr '\n' ' ') $(cat reason.log 2>/dev/null | tr '\n' ' ')"
+              exit 1
+            fi
+            xcrun stapler staple "$dmg"
+            # Prove it rather than assume it: an unstapled dmg would otherwise
+            # ship looking identical to a stapled one.
+            xcrun stapler validate "$dmg"
+            spctl -a -t open --context context:primary-signature -v "$dmg"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
@@ -100,4 +139,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" artifacts/* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "macOS build is signed and notarized by Apple — it opens normally. Windows build is unsigned: Windows will warn on first launch (More info → Run anyway). See the About page in the app for the full disclaimer."
+            --notes "macOS build is signed and notarized by Apple — the disk image and the app both carry a stapled ticket, so it opens with no warning. Windows build is unsigned: Windows will warn on first launch (More info → Run anyway). See the About page in the app for the full disclaimer."
