@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+.DS_Store
+
+# Wrangler keeps account identifiers here.
+worker/.wrangler/

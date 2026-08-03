@@ -1,0 +1,50 @@
+{
+  "name": "aidash",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop dashboard showing quota usage across your Codex and Claude accounts",
+  "repository": {
+    "type": "git",
+    "url": "git@gitlab.itexus.com:tools/aidash.git"
+  },
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node app/test.mjs",
+    "dist": "electron-builder",
+    "site:dev": "wrangler dev --config worker/wrangler.toml",
+    "site:deploy": "wrangler deploy --config worker/wrangler.toml"
+  },
+  "build": {
+    "appId": "us.itex.aidash",
+    "productName": "aidash",
+    "files": [
+      "app/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "devDependencies": {
+    "electron": "*",
+    "electron-builder": "*",
+    "wrangler": "*"
+  }
+}

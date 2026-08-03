@@ -1,0 +1,14 @@
+# Landing page and update manifest for the desktop app.
+#
+# No database, no secrets, no schedule — everything that needed them moved into
+# the app itself, which runs on the machine that owns the credentials.
+name = "aidash"
+main = "src/index.js"
+compatibility_date = "2026-07-31"
+
+[[routes]]
+pattern = "aidash.itex.us"
+custom_domain = true
+
+[observability]
+enabled = true

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<!-- No remote content is ever loaded, so everything is locked to self. -->
+		<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+		<title>AI usage</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<div class="drag-region"></div>
+
+		<div id="update-banner" class="update-banner" hidden>
+			<span id="update-text"></span>
+			<button id="update-download" class="primary">Download</button>
+			<button id="update-dismiss" title="Dismiss">×</button>
+		</div>
+
+		<nav class="tabs">
+			<button class="tab chosen" data-tab="usage">Usage</button>
+			<button class="tab" data-tab="utils">Utils</button>
+		</nav>
+
+		<!-- ------------------------------------------------------------ Usage -->
+		<section class="page" data-page="usage">
+			<header class="topbar">
+				<h1>AI usage</h1>
+				<span class="tag" id="count"></span>
+				<button id="refresh">refresh now</button>
+				<span id="refreshed"></span>
+				<span class="spacer"></span>
+				<button id="add" class="primary">Add account</button>
+			</header>
+
+			<main id="grid" class="grid"></main>
+
+			<section id="empty" class="empty" hidden>
+				<h2>No accounts yet</h2>
+				<p>Add a Codex or Claude account to see how much of its quota you have used.</p>
+				<p class="hint">Signing in opens your browser. Credentials stay on this machine — the app never sends them anywhere.</p>
+				<button class="primary" data-action="add">Add your first account</button>
+			</section>
+		</section>
+
+		<!-- ------------------------------------------------------------ Utils -->
+		<section class="page" data-page="utils" hidden>
+			<header class="topbar">
+				<h1>Claude Code sessions</h1>
+				<button id="sessions-rescan">rescan</button>
+				<span id="sessions-status"></span>
+				<span class="spacer"></span>
+				<button id="add-root" class="primary">Add account folder</button>
+			</header>
+
+			<p class="lede">
+				Sessions live inside whichever account recorded them. Drag one onto another account to move it there — within the same
+				project folder, since a session belongs to the directory it ran in.
+			</p>
+
+			<div id="roots" class="roots"></div>
+			<div id="projects"></div>
+
+			<section id="sessions-empty" class="empty" hidden>
+				<h2>No sessions found</h2>
+				<p>Nothing under <code>projects/</code> in the folders listed above.</p>
+				<p class="hint">If you use another account with a custom <code>CLAUDE_CONFIG_DIR</code>, add its folder to see it here.</p>
+			</section>
+		</section>
+
+		<!-- Add-account flow -->
+		<dialog id="add-dialog">
+			<form method="dialog" id="add-form">
+				<h2>Add an account</h2>
+
+				<div class="step" data-step="choose">
+					<label>Provider</label>
+					<div class="providers" id="providers"></div>
+
+					<label for="label">Name</label>
+					<input id="label" name="label" placeholder="Work, personal, …" autocomplete="off" required />
+					<p class="hint">Only used as the card title.</p>
+				</div>
+
+				<div class="step" data-step="browser" hidden>
+					<p class="status">Waiting for you to sign in…</p>
+					<p class="hint">Your browser has opened. If it did not, use this link:</p>
+					<button type="button" class="linklike" id="auth-url"></button>
+				</div>
+
+				<div class="step" data-step="code" hidden>
+					<p class="status">Almost there.</p>
+					<label for="code">Paste the code from the browser</label>
+					<input id="code" name="code" autocomplete="off" spellcheck="false" />
+				</div>
+
+				<p class="error" id="add-error" hidden></p>
+
+				<menu>
+					<button type="button" id="add-cancel">Cancel</button>
+					<button type="button" id="add-next" class="primary">Continue</button>
+				</menu>
+			</form>
+		</dialog>
+
+		<script type="module" src="app.js"></script>
+	</body>
+</html>
