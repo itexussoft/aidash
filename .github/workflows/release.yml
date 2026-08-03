@@ -66,7 +66,11 @@ jobs:
         run: |
           set -o pipefail
           if ! npx electron-builder ${{ matrix.args }} --publish never 2>&1 | tee build.log; then
-            echo "::error title=electron-builder failed::$(tail -n 25 build.log | tr '\n' ' ' | cut -c1-900)"
+            # The reason is the last thing printed, and electron-builder marks it
+            # with a heavy cross. Take both: the marked lines, then the tail as a
+            # fallback for a failure that carries no marker.
+            echo "::error title=electron-builder failed::$(grep -aE '⨯|Error:|error:' build.log | tail -n 6 | tr '\n' ' ' | tail -c 800)"
+            echo "::error title=build.log tail::$(tail -c 800 build.log | tr '\n' ' ')"
             exit 1
           fi
 
