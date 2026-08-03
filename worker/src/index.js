@@ -32,7 +32,9 @@ const RELEASE = {
 	downloads: {
 		'darwin-arm64': asset('0.1.0', 'aidash-0.1.0-arm64.dmg'),
 		'darwin-x64': asset('0.1.0', 'aidash-0.1.0.dmg'),
-		'win32-x64': asset('0.1.0', 'aidash Setup 0.1.0.exe'),
+		// GitHub turns spaces in asset names into dots, so the file electron-builder
+		// writes as "aidash Setup 0.1.0.exe" is served under this name.
+		'win32-x64': asset('0.1.0', 'aidash.Setup.0.1.0.exe'),
 	},
 };
 
