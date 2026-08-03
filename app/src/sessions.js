@@ -21,6 +21,13 @@
  * Moving a session therefore means moving its index entry. Moving the
  * transcript would do nothing useful and would strand the entry that points at
  * it.
+ *
+ * This is the desktop app's mechanism specifically. The terminal CLI carries no
+ * reference to this index — it lists whatever is in its own
+ * `<config dir>/projects/`, for whoever happens to be signed in — so its
+ * sessions are scoped by directory rather than by account, and are never hidden
+ * from it. Eight transcripts on the machine this was built against have no
+ * index entry at all: visible to the CLI, invisible to the desktop.
  */
 
 import { readdir, stat, rename, access, open, readFile, mkdir, copyFile, rm } from 'node:fs/promises';
