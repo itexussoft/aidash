@@ -1,28 +1,73 @@
+/**
+ * Visual design.
+ *
+ * Palette follows itexus.com — ink #051320, accent #25BB4D — so the app and its
+ * landing page read as one product. Dark mode is designed rather than inverted:
+ * the ink becomes the background and the accent lifts slightly, because the
+ * brand green goes muddy against dark surfaces at its light-mode value.
+ *
+ * Type is the platform's own UI face. The brand font, Heebo, has no Cyrillic,
+ * and session titles here are frequently Russian — half the interface would
+ * have fallen back to something else and the mismatch would have been the first
+ * thing you noticed.
+ *
+ * Spacing is a 4px scale throughout, which is what stops a dense screen of
+ * cards and columns from looking arbitrary.
+ */
+
 :root {
 	color-scheme: light dark;
-	--bg: #fbfbfa;
-	--fg: #1a1a18;
-	--muted: #6b6b66;
-	--card: #fff;
-	--line: #e5e5e1;
-	--track: #ecebe7;
-	--ok: #3d8f5a;
-	--warn: #c08a2e;
+
+	--ink: #051320;
+	--accent: #25bb4d;
+	--accent-strong: #1fa543;
+
+	--bg: #f7f8f8;
+	--surface: #ffffff;
+	--surface-2: #fbfcfc;
+	--fg: var(--ink);
+	--muted: #6e717a;
+	--faint: #9aa0a6;
+	--line: #e4e7e8;
+	--line-strong: #d3d8da;
+	--track: #eceff0;
+
+	--ok: #1fa543;
+	--warn: #b8801f;
 	--crit: #c0402e;
-	--accent: #1a1a18;
-	--accent-fg: #fff;
+
+	--radius: 10px;
+	--radius-sm: 6px;
+	--shadow: 0 1px 2px rgb(5 19 32 / 0.04), 0 1px 3px rgb(5 19 32 / 0.06);
+
+	--step-1: 4px;
+	--step-2: 8px;
+	--step-3: 12px;
+	--step-4: 16px;
+	--step-5: 24px;
+	--step-6: 32px;
 }
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #151513;
-		--fg: #eeeeea;
-		--muted: #9a9a92;
-		--card: #1e1e1b;
-		--line: #302f2b;
-		--track: #2b2a26;
-		--accent: #eeeeea;
-		--accent-fg: #151513;
+		--bg: #0a1119;
+		--surface: #101922;
+		--surface-2: #14202a;
+		--fg: #e8edf1;
+		--muted: #8c959e;
+		--faint: #6b747d;
+		--line: #1e2a35;
+		--line-strong: #2a3844;
+		--track: #1a2530;
+
+		/* Lifted: the light-mode green reads muddy on dark surfaces. */
+		--accent: #34ce62;
+		--accent-strong: #45db72;
+		--ok: #34ce62;
+		--warn: #d9a441;
+		--crit: #e2604d;
+
+		--shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 	}
 }
 
@@ -32,9 +77,7 @@
 
 /*
  * The `hidden` attribute is only a UA rule, so any author `display` beats it —
- * which is how a hidden banner stayed on screen, empty, with dead buttons.
- * Making it explicit means adding a display rule can never resurrect an element
- * that is supposed to be gone.
+ * which is how a hidden banner once stayed on screen, empty, with dead buttons.
  */
 [hidden] {
 	display: none !important;
@@ -42,109 +85,251 @@
 
 body {
 	margin: 0;
-	padding: 0 1.25rem 2rem;
+	padding: 0 var(--step-5) var(--step-6);
 	background: var(--bg);
 	color: var(--fg);
-	font: 15px/1.5 ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+	font-size: 13.5px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
 }
 
 /* Room for the traffic lights under the hidden macOS title bar. */
 .drag-region {
-	height: 38px;
+	height: 34px;
 	-webkit-app-region: drag;
 }
 
-.topbar {
-	display: flex;
-	align-items: baseline;
-	gap: 0.75rem;
-	padding-bottom: 1.25rem;
-	flex-wrap: wrap;
-}
+/* ------------------------------------------------------------------ type */
 
 h1 {
-	font-size: 1.05rem;
-	font-weight: 600;
+	font-size: 20px;
+	font-weight: 650;
+	letter-spacing: -0.015em;
 	margin: 0;
-	letter-spacing: -0.01em;
 }
 
-.spacer {
-	flex: 1;
+h2,
+h3 {
+	margin: 0;
 }
 
-.tag {
-	font-size: 0.68rem;
-	text-transform: uppercase;
-	letter-spacing: 0.06em;
-	color: var(--muted);
-	border: 1px solid var(--line);
-	border-radius: 99px;
-	padding: 0.15rem 0.5rem;
-	white-space: nowrap;
+code {
+	background: var(--track);
+	border-radius: 4px;
+	padding: 1px 5px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.92em;
 }
+
+/* --------------------------------------------------------------- controls */
 
 button {
 	font: inherit;
-	font-size: 0.78rem;
+	font-size: 12.5px;
+	font-weight: 500;
 	cursor: pointer;
 	background: none;
-	border: none;
+	border: 1px solid transparent;
 	color: var(--muted);
 	padding: 0;
+	border-radius: var(--radius-sm);
+	transition:
+		color 0.12s,
+		background 0.12s,
+		border-color 0.12s;
 }
 button:hover:not(:disabled) {
 	color: var(--fg);
 }
 button:disabled {
-	opacity: 0.5;
+	opacity: 0.45;
 	cursor: default;
+}
+
+button.primary,
+button.ghost {
+	padding: 5px 12px;
+	line-height: 1.4;
 }
 
 button.primary {
 	background: var(--accent);
-	color: var(--accent-fg);
-	border-radius: 7px;
-	padding: 0.4rem 0.8rem;
-	font-weight: 500;
+	border-color: var(--accent);
+	color: #fff;
+	font-weight: 600;
 }
 button.primary:hover:not(:disabled) {
-	color: var(--accent-fg);
-	opacity: 0.85;
+	background: var(--accent-strong);
+	border-color: var(--accent-strong);
+	color: #fff;
 }
 
-#refreshed {
-	font-size: 0.72rem;
+button.ghost {
+	border-color: var(--line-strong);
+	background: var(--surface);
+	color: var(--muted);
+}
+button.ghost:hover:not(:disabled) {
+	color: var(--fg);
+	border-color: var(--faint);
+}
+
+.chip {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--muted);
+	background: var(--track);
+	border-radius: 99px;
+	padding: 2px 8px;
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+.tabs {
+	display: flex;
+	gap: var(--step-1);
+	border-bottom: 1px solid var(--line);
+	margin-bottom: var(--step-5);
+}
+.tab {
+	padding: var(--step-2) var(--step-3);
+	font-size: 13px;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	border-radius: 0;
+}
+.tab.chosen {
+	color: var(--fg);
+	font-weight: 600;
+	border-bottom-color: var(--accent);
+}
+
+/* --------------------------------------------------------- page headings */
+
+/*
+ * Two rows rather than one: title and actions on the first, status beneath.
+ * The single-row version needed a flexible spacer to push the actions right,
+ * which left a hole the moment a button was removed.
+ */
+.page-head {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	gap: var(--step-2) var(--step-4);
+	margin-bottom: var(--step-5);
+}
+.head-title {
+	display: flex;
+	align-items: center;
+	gap: var(--step-2);
+	min-width: 0;
+}
+.head-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--step-2);
+}
+.head-meta {
+	grid-column: 1 / -1;
+	margin: 0;
+	font-size: 12px;
 	color: var(--muted);
 	font-variant-numeric: tabular-nums;
+	min-height: 1.2em;
 }
+.head-meta.error {
+	color: var(--crit);
+}
+.head-meta.ok-text {
+	color: var(--ok);
+}
+
+.lede {
+	font-size: 13px;
+	color: var(--muted);
+	max-width: 78ch;
+	margin: 0 0 var(--step-3);
+}
+
+/* --------------------------------------------------------------- notices */
+
+.notice {
+	display: block;
+	border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line));
+	background: color-mix(in srgb, var(--warn) 7%, var(--surface));
+	border-radius: var(--radius);
+	padding: var(--step-3) var(--step-4);
+	font-size: 12.5px;
+	color: var(--muted);
+	line-height: 1.6;
+	max-width: 90ch;
+	margin-bottom: var(--step-5);
+}
+.notice strong {
+	color: var(--fg);
+	display: block;
+	margin-bottom: 2px;
+	font-weight: 600;
+}
+
+.update-banner {
+	display: flex;
+	align-items: center;
+	gap: var(--step-3);
+	background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+	border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+	border-radius: var(--radius);
+	padding: var(--step-2) var(--step-3);
+	margin-bottom: var(--step-4);
+	font-size: 13px;
+}
+#update-text {
+	flex: 1;
+}
+#update-dismiss {
+	font-size: 15px;
+	line-height: 1;
+	padding: 0 var(--step-1);
+}
+
+/* ---------------------------------------------------------- usage cards */
 
 .grid {
 	display: flex;
 	flex-direction: column;
-	gap: 2rem;
+	gap: var(--step-6);
 }
 
 .provider-group {
 	display: flex;
 	flex-direction: column;
-	gap: 0.75rem;
+	gap: var(--step-3);
 }
 .group-head {
 	display: flex;
 	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.72rem;
-	font-weight: 600;
+	gap: var(--step-2);
+	font-size: 11px;
+	font-weight: 700;
 	text-transform: uppercase;
-	letter-spacing: 0.08em;
-	color: var(--muted);
-	margin: 0;
+	letter-spacing: 0.09em;
+	color: var(--faint);
 	cursor: pointer;
 	user-select: none;
+	padding: 0;
 }
 .group-head:hover {
-	color: var(--fg);
+	color: var(--muted);
 }
 .group-head::after {
 	content: '';
@@ -154,9 +339,9 @@ button.primary:hover:not(:disabled) {
 }
 .group-caret {
 	display: inline-block;
-	width: 0.6rem;
+	width: 9px;
+	font-size: 8px;
 	transition: transform 0.15s;
-	font-size: 0.6rem;
 	letter-spacing: 0;
 }
 .provider-group.collapsed .group-caret {
@@ -164,58 +349,84 @@ button.primary:hover:not(:disabled) {
 }
 .group-count {
 	font-variant-numeric: tabular-nums;
-	font-weight: 500;
+	font-weight: 600;
 	letter-spacing: 0;
 }
 .group-grid {
 	display: grid;
-	gap: 1rem;
-	grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+	gap: var(--step-4);
+	grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
 }
 
 .card {
-	background: var(--card);
+	background: var(--surface);
 	border: 1px solid var(--line);
-	border-radius: 10px;
-	padding: 1.1rem;
+	border-radius: var(--radius);
+	padding: var(--step-4) var(--step-4) var(--step-3);
+	box-shadow: var(--shadow);
+}
+.card.err {
+	border-color: color-mix(in srgb, var(--crit) 30%, var(--line));
 }
 .card header {
 	display: flex;
 	justify-content: space-between;
 	align-items: flex-start;
-	gap: 0.75rem;
-	margin-bottom: 1rem;
+	gap: var(--step-3);
+	margin-bottom: var(--step-4);
 }
 .card h2 {
-	font-size: 0.95rem;
-	font-weight: 600;
-	margin: 0;
+	font-size: 14px;
+	font-weight: 650;
+	letter-spacing: -0.01em;
 }
 .ident {
-	margin: 0.15rem 0 0;
-	font-size: 0.78rem;
+	margin: 2px 0 0;
+	font-size: 12px;
 	color: var(--muted);
 }
+.tag {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--faint);
+	border: 1px solid var(--line);
+	border-radius: 99px;
+	padding: 2px 7px;
+	white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- meters */
 
 .meter {
-	margin-bottom: 0.9rem;
+	margin-bottom: var(--step-3);
+}
+.meter:last-of-type {
+	margin-bottom: 0;
 }
 .meter-head {
 	display: flex;
 	justify-content: space-between;
-	font-size: 0.8rem;
-	margin-bottom: 0.3rem;
+	align-items: baseline;
+	gap: var(--step-2);
+	font-size: 12px;
+	margin-bottom: 5px;
 }
 .meter-label {
 	color: var(--muted);
 	text-transform: capitalize;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .meter-val {
 	font-variant-numeric: tabular-nums;
-	font-weight: 600;
+	font-weight: 650;
+	font-size: 13px;
 }
 .bar {
-	height: 6px;
+	height: 5px;
 	background: var(--track);
 	border-radius: 99px;
 	overflow: hidden;
@@ -225,7 +436,7 @@ button.primary:hover:not(:disabled) {
 	height: 100%;
 	border-radius: 99px;
 	background: var(--ok);
-	transition: width 0.3s ease;
+	transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .warn .bar i {
 	background: var(--warn);
@@ -240,11 +451,11 @@ button.primary:hover:not(:disabled) {
 	color: var(--crit);
 }
 .meter-foot {
-	font-size: 0.72rem;
-	color: var(--muted);
-	margin-top: 0.25rem;
+	font-size: 11.5px;
+	color: var(--faint);
+	margin-top: 3px;
 	display: flex;
-	gap: 0.5rem;
+	gap: var(--step-2);
 }
 .note {
 	color: var(--crit);
@@ -252,41 +463,46 @@ button.primary:hover:not(:disabled) {
 
 .facts {
 	list-style: none;
-	margin: 0.75rem 0 0;
+	margin: var(--step-3) 0 0;
 	padding: 0;
-	font-size: 0.78rem;
+	font-size: 12px;
 	color: var(--muted);
 }
 .facts li {
-	margin-bottom: 0.2rem;
+	margin-bottom: 2px;
 }
 
 .error {
 	color: var(--crit);
-	font-size: 0.78rem;
-	margin: 0.6rem 0 0;
+	font-size: 12px;
+	margin: var(--step-2) 0 0;
 	word-break: break-word;
+}
+.stale {
+	color: var(--warn);
+	font-size: 12px;
+	margin: var(--step-2) 0 0;
 }
 .muted {
 	color: var(--muted);
-	font-size: 0.85rem;
+	font-size: 13px;
 }
 
 .card footer {
-	margin-top: 1rem;
-	padding-top: 0.7rem;
+	margin-top: var(--step-4);
+	padding-top: var(--step-2);
 	border-top: 1px solid var(--line);
-	font-size: 0.72rem;
-	color: var(--muted);
+	font-size: 11.5px;
+	color: var(--faint);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	gap: 0.5rem;
+	gap: var(--step-2);
 }
 .foot-actions {
 	display: flex;
 	align-items: center;
-	gap: 0.75rem;
+	gap: var(--step-3);
 }
 button.remove:hover {
 	color: var(--crit);
@@ -297,103 +513,125 @@ details {
 }
 summary {
 	cursor: pointer;
+	list-style: none;
+}
+summary::-webkit-details-marker {
+	display: none;
 }
 details pre {
 	max-height: 340px;
 	overflow: auto;
-	background: var(--bg);
-	border: 1px solid var(--line);
-	border-radius: 6px;
-	padding: 0.6rem;
-	font-size: 0.7rem;
-	margin: 0.5rem 0 0;
+	background: var(--surface-2);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	padding: var(--step-3);
+	font-size: 11px;
+	line-height: 1.5;
+	margin: var(--step-2) 0 0;
 	position: absolute;
 	right: 0;
-	width: min(520px, 70vw);
-	z-index: 2;
+	width: min(540px, 72vw);
+	z-index: 3;
+	box-shadow: 0 8px 24px rgb(5 19 32 / 0.14);
 }
 
+/* ------------------------------------------------------------ empty state */
+
 .empty {
-	max-width: 44ch;
-	margin: 3rem auto;
+	max-width: 46ch;
+	margin: var(--step-6) auto;
 	text-align: center;
 	color: var(--muted);
 }
 .empty h2 {
 	color: var(--fg);
-	font-size: 1rem;
-	margin: 0 0 0.5rem;
+	font-size: 15px;
+	font-weight: 650;
+	margin-bottom: var(--step-2);
 }
 .empty p {
-	margin: 0 0 0.6rem;
-	font-size: 0.88rem;
+	margin: 0 0 var(--step-2);
+}
+.empty .primary {
+	margin-top: var(--step-3);
 }
 .hint {
-	font-size: 0.78rem;
-	color: var(--muted);
+	font-size: 12px;
+	color: var(--faint);
 }
 
+/* -------------------------------------------------------------- dialogs */
+
 dialog {
-	border: 1px solid var(--line);
-	border-radius: 12px;
-	background: var(--card);
+	border: 1px solid var(--line-strong);
+	border-radius: 14px;
+	background: var(--surface);
 	color: var(--fg);
-	padding: 1.5rem;
+	padding: var(--step-5);
 	width: min(440px, 90vw);
+	box-shadow: 0 16px 48px rgb(5 19 32 / 0.2);
 }
 dialog::backdrop {
-	background: rgb(0 0 0 / 0.45);
+	background: rgb(5 19 32 / 0.45);
+	backdrop-filter: blur(2px);
 }
 dialog h2 {
-	margin: 0 0 1.25rem;
-	font-size: 1rem;
+	margin-bottom: var(--step-4);
+	font-size: 15px;
+	font-weight: 650;
 }
 dialog label {
 	display: block;
-	font-size: 0.78rem;
+	font-size: 12px;
+	font-weight: 500;
 	color: var(--muted);
-	margin-bottom: 0.35rem;
+	margin-bottom: 5px;
 }
 dialog input {
 	width: 100%;
-	padding: 0.5rem 0.6rem;
-	border: 1px solid var(--line);
-	border-radius: 7px;
-	background: var(--bg);
+	padding: 7px 10px;
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
 	color: inherit;
 	font: inherit;
-	font-size: 0.88rem;
-	margin-bottom: 0.4rem;
+	font-size: 13px;
+	margin-bottom: 5px;
+}
+dialog input:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 dialog menu {
 	display: flex;
 	justify-content: flex-end;
-	gap: 0.75rem;
-	margin: 1.5rem 0 0;
+	gap: var(--step-2);
+	margin: var(--step-5) 0 0;
 	padding: 0;
 }
 
 .providers {
 	display: flex;
-	gap: 0.5rem;
-	margin-bottom: 1rem;
+	gap: var(--step-2);
+	margin-bottom: var(--step-4);
 }
 .provider {
 	flex: 1;
-	border: 1px solid var(--line);
-	border-radius: 8px;
-	padding: 0.6rem;
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	padding: var(--step-3);
 	text-align: left;
-	background: var(--bg);
+	background: var(--surface-2);
 }
 .provider.chosen {
 	border-color: var(--accent);
-	color: var(--fg);
+	background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 .pname {
 	display: block;
-	font-weight: 500;
-	font-size: 0.85rem;
+	font-weight: 600;
+	font-size: 13px;
 	color: var(--fg);
 }
 .provider:disabled .pname {
@@ -401,123 +639,57 @@ dialog menu {
 }
 .pnote {
 	display: block;
-	font-size: 0.7rem;
-	color: var(--muted);
-	margin-top: 0.2rem;
+	font-size: 11px;
+	color: var(--faint);
+	margin-top: 2px;
 }
 
 .status {
-	font-size: 0.88rem;
-	margin: 0 0 0.5rem;
+	font-size: 13px;
+	margin: 0 0 var(--step-2);
 }
-
-/* ----------------------------------------------------------- update banner */
-
-.update-banner {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	background: color-mix(in srgb, var(--ok) 12%, var(--card));
-	border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
-	border-radius: 8px;
-	padding: 0.5rem 0.75rem;
-	margin-bottom: 1rem;
-	font-size: 0.8rem;
-}
-.update-banner #update-text {
-	flex: 1;
-}
-.update-banner .primary {
-	padding: 0.25rem 0.7rem;
-	font-size: 0.75rem;
-}
-#update-dismiss {
-	font-size: 1rem;
-	line-height: 1;
-}
-
-/* ------------------------------------------------------------------- tabs */
-
-.tabs {
-	display: flex;
-	gap: 0.25rem;
-	border-bottom: 1px solid var(--line);
-	margin-bottom: 1.25rem;
-}
-.tab {
-	padding: 0.5rem 0.9rem;
-	font-size: 0.82rem;
-	border-bottom: 2px solid transparent;
-	margin-bottom: -1px;
-}
-.tab.chosen {
-	color: var(--fg);
-	border-bottom-color: var(--accent);
-}
-
-.lede {
-	font-size: 0.82rem;
+.linklike {
+	font-size: 11px;
 	color: var(--muted);
-	max-width: 72ch;
-	margin: 0 0 1.25rem;
+	text-align: left;
+	word-break: break-all;
+	text-decoration: underline;
+	display: block;
+	padding: 0;
 }
 
-code {
-	background: var(--track);
-	border-radius: 4px;
-	padding: 0.08rem 0.3rem;
-	font-size: 0.9em;
-}
-
-.ok-text {
-	color: var(--ok);
-	font-size: 0.72rem;
-}
-#sessions-status {
-	font-size: 0.72rem;
-}
-#sessions-status.error {
-	color: var(--crit);
-}
-
-/* --------------------------------------------------------- session moving */
+/* ------------------------------------------------------ local sessions */
 
 .roots {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.5rem;
-	margin-bottom: 1.5rem;
+	gap: var(--step-2);
+	margin-bottom: var(--step-5);
 }
 .root-chip {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.4rem;
-	font-size: 0.72rem;
+	gap: 6px;
+	font-size: 11.5px;
 	color: var(--muted);
+	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 99px;
-	padding: 0.2rem 0.5rem 0.2rem 0.7rem;
+	padding: 3px 10px;
 }
 .root-chip.stale {
-	opacity: 0.65;
-}
-.root-remove {
-	font-size: 0.9rem;
-	line-height: 1;
-	color: var(--muted);
-}
-.root-remove:hover {
-	color: var(--crit);
+	color: var(--warn);
+	border-color: color-mix(in srgb, var(--warn) 35%, var(--line));
 }
 
 .project {
-	margin-bottom: 1.75rem;
+	margin-bottom: var(--step-6);
 }
 .project h3 {
-	font-size: 0.78rem;
+	font-size: 12px;
 	font-weight: 500;
 	color: var(--muted);
-	margin: 0 0 0.5rem;
+	margin-bottom: var(--step-2);
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -526,17 +698,17 @@ code {
 
 .cols {
 	display: grid;
-	gap: 0.75rem;
-	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+	gap: var(--step-3);
+	grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
 	align-items: start;
 }
 
 .col {
 	border: 1px solid var(--line);
-	border-radius: 9px;
-	background: var(--card);
-	padding: 0.6rem;
-	min-height: 5rem;
+	border-radius: var(--radius);
+	background: var(--surface);
+	padding: var(--step-3);
+	min-height: 84px;
 	transition:
 		border-color 0.15s,
 		background 0.15s;
@@ -546,30 +718,37 @@ code {
 	border-style: dashed;
 	background: transparent;
 }
+.col.codex {
+	border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+}
 .col.over {
 	border-color: var(--ok);
-	background: color-mix(in srgb, var(--ok) 8%, var(--card));
+	background: color-mix(in srgb, var(--ok) 8%, var(--surface));
 }
+/* Crossing tools copies rather than moves, so it is a different colour. */
+.col.over.copy {
+	border-color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+}
+
 .col-head {
 	display: flex;
 	justify-content: space-between;
 	align-items: flex-start;
-	gap: 0.5rem;
-	font-size: 0.7rem;
-	color: var(--muted);
-	margin-bottom: 0.5rem;
-	padding-bottom: 0.4rem;
+	gap: var(--step-2);
+	margin-bottom: var(--step-2);
+	padding-bottom: 6px;
 	border-bottom: 1px solid var(--line);
 }
 .col-who {
 	display: flex;
 	flex-direction: column;
-	gap: 0.1rem;
+	gap: 1px;
 	min-width: 0;
 }
 .col-who b {
-	font-size: 0.76rem;
-	font-weight: 600;
+	font-size: 12.5px;
+	font-weight: 650;
 	color: var(--fg);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -581,18 +760,20 @@ code {
 }
 .col-path {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 0.65rem;
-	opacity: 0.75;
+	font-size: 10.5px;
+	color: var(--faint);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .col-stale {
-	font-size: 0.63rem;
+	font-size: 10.5px;
 	color: var(--warn);
-	margin-top: 0.15rem;
+	margin-top: 2px;
 }
 .col-count {
+	font-size: 11.5px;
+	color: var(--faint);
 	font-variant-numeric: tabular-nums;
 	flex-shrink: 0;
 }
@@ -603,18 +784,25 @@ code {
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 0.35rem;
+	gap: 5px;
 }
 
 .session {
 	border: 1px solid var(--line);
-	border-radius: 6px;
-	padding: 0.45rem 0.55rem;
-	background: var(--bg);
+	border-radius: var(--radius-sm);
+	padding: 7px 9px;
+	background: var(--surface-2);
 	cursor: grab;
 	display: flex;
 	flex-direction: column;
-	gap: 0.15rem;
+	gap: 2px;
+	transition:
+		border-color 0.12s,
+		box-shadow 0.12s;
+}
+.session:hover {
+	border-color: var(--line-strong);
+	box-shadow: var(--shadow);
 }
 .session:active {
 	cursor: grabbing;
@@ -622,53 +810,26 @@ code {
 .session.dragging {
 	opacity: 0.4;
 }
+.s-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--step-1);
+}
 .s-title {
-	font-size: 0.78rem;
+	font-size: 12.5px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 .s-meta {
-	font-size: 0.68rem;
-	color: var(--muted);
+	font-size: 11px;
+	color: var(--faint);
 }
 
-.drop-hint {
-	font-size: 0.7rem;
-	color: var(--muted);
-	opacity: 0.6;
-	padding: 0.6rem 0;
-	text-align: center;
-	border: 1px dashed var(--line);
-	border-radius: 6px;
-}
-.linklike {
-	font-size: 0.7rem;
-	color: var(--muted);
-	text-align: left;
-	word-break: break-all;
-	text-decoration: underline;
-	display: block;
-}
-
-/* Codex sits apart from the Claude accounts: it is a tool, not an account. */
-.col.codex {
-	border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
-}
-.col.over.copy {
-	border-color: var(--warn);
-	background: color-mix(in srgb, var(--warn) 8%, var(--card));
-}
-
-.s-head {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 0.4rem;
-}
 .s-actions {
 	display: flex;
-	gap: 0.25rem;
+	gap: 1px;
 	opacity: 0;
 	transition: opacity 0.12s;
 	flex-shrink: 0;
@@ -678,12 +839,10 @@ code {
 	opacity: 1;
 }
 .s-act {
-	font-size: 0.72rem;
+	font-size: 11px;
 	line-height: 1;
-	padding: 0.1rem 0.2rem;
-	border-radius: 4px;
-	color: var(--muted);
-	cursor: pointer;
+	padding: 3px 4px;
+	color: var(--faint);
 }
 .s-act:hover {
 	color: var(--fg);
@@ -691,4 +850,14 @@ code {
 }
 .s-act[data-act='delete']:hover {
 	color: var(--crit);
+	background: color-mix(in srgb, var(--crit) 12%, transparent);
+}
+
+.drop-hint {
+	font-size: 11.5px;
+	color: var(--faint);
+	padding: var(--step-3) 0;
+	text-align: center;
+	border: 1px dashed var(--line-strong);
+	border-radius: var(--radius-sm);
 }

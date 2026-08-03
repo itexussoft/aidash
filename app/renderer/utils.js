@@ -1,5 +1,5 @@
 /**
- * Utils tab — Claude Code and Codex sessions side by side.
+ * Local Sessions tab — Claude Code and Codex sessions side by side.
  *
  * One row per project folder, one column per place a session can live. A
  * session belongs to the directory it ran in, so it only ever moves sideways
@@ -40,7 +40,8 @@ const formatSize = (bytes) =>
 
 function setStatus(message, tone = 'muted') {
 	statusLabel.textContent = message ?? '';
-	statusLabel.className = tone;
+	// Keep the layout class; only the tone varies.
+	statusLabel.className = `head-meta ${tone === 'muted' ? '' : tone}`.trim();
 }
 
 const accountName = (account) => account.email ?? `account ${account.accountUuid.slice(0, 8)}`;

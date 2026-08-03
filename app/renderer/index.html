@@ -18,18 +18,21 @@
 
 		<nav class="tabs">
 			<button class="tab chosen" data-tab="usage">Usage</button>
-			<button class="tab" data-tab="utils">Utils</button>
+			<button class="tab" data-tab="utils">Local Sessions</button>
 		</nav>
 
 		<!-- ------------------------------------------------------------ Usage -->
 		<section class="page" data-page="usage">
-			<header class="topbar">
-				<h1>AI usage</h1>
-				<span class="tag" id="count"></span>
-				<button id="refresh">refresh now</button>
-				<span id="refreshed"></span>
-				<span class="spacer"></span>
-				<button id="add" class="primary">Add account</button>
+			<header class="page-head">
+				<div class="head-title">
+					<h1>Usage</h1>
+					<span class="chip" id="count"></span>
+				</div>
+				<div class="head-actions">
+					<button id="refresh" class="ghost">Refresh</button>
+					<button id="add" class="primary">Add account</button>
+				</div>
+				<p class="head-meta" id="refreshed"></p>
 			</header>
 
 			<main id="grid" class="grid"></main>
@@ -44,11 +47,22 @@
 
 		<!-- ------------------------------------------------------------ Utils -->
 		<section class="page" data-page="utils" hidden>
-			<header class="topbar">
-				<h1>Claude Code sessions</h1>
-				<button id="sessions-rescan">rescan</button>
-				<span id="sessions-status"></span>
+			<header class="page-head">
+				<div class="head-title">
+					<h1>Local Sessions</h1>
+				</div>
+				<div class="head-actions">
+					<button id="sessions-rescan" class="ghost">Rescan</button>
+				</div>
+				<p class="head-meta" id="sessions-status"></p>
 			</header>
+
+			<aside class="notice">
+				<strong>Unofficial, and at your own risk.</strong>
+				Claude Code and Codex publish no documentation for how they store sessions on disk. Everything here was worked out by
+				reading the files themselves, so a change on either side can break it without warning. Moving, copying and deleting
+				sessions edits those files directly. Keep your own backup of anything you cannot afford to lose.
+			</aside>
 
 			<p class="lede">
 				The Claude Code <strong>desktop app</strong> shows only the sessions its index lists under the account you are signed in

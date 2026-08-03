@@ -156,12 +156,12 @@ renameInput.addEventListener('keydown', (e) => {
 
 async function refresh() {
 	refreshBtn.disabled = true;
-	refreshBtn.textContent = 'refreshing…';
+	refreshBtn.textContent = 'Refreshing…';
 	try {
 		state = await window.aidash.refresh();
 	} finally {
 		refreshBtn.disabled = false;
-		refreshBtn.textContent = 'refresh now';
+		refreshBtn.textContent = 'Refresh';
 		paint();
 	}
 }
