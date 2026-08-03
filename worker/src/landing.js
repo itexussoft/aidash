@@ -8,7 +8,7 @@
  * yet says so instead of offering a link that 404s.
  */
 
-import { usageMockup, sessionsMockup, logoMark } from './mockups.js';
+import { usageMockup, sessionsMockup, logoLockup } from './mockups.js';
 
 const ACCENT = '#25BB4D';
 const ACCENT_DARK = '#1FA543';
@@ -63,9 +63,10 @@ export function renderLanding({ version, downloads, repoUrl }) {
   /* ------------------------------------------------------------------ nav */
   header.nav{position:sticky; top:0; z-index:10; background:rgb(255 255 255 / .92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line)}
   header.nav .wrap{display:flex; align-items:center; gap:16px; height:66px}
-  .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em}
-  .brand span{color:var(--accent)}
-  .mark{display:block; width:30px; height:30px; border-radius:8px; flex:none}
+  .brand{text-decoration:none}
+  .lockup{display:inline-flex; align-items:center; gap:9px}
+  .lockup-mark{width:26px; height:26px; flex:none; display:block}
+  .lockup-word{font-size:20px; font-weight:700; letter-spacing:-.035em; line-height:1}
   .nav-spacer{flex:1}
   .nav a{color:var(--muted); text-decoration:none; font-size:14px; font-weight:500}
   .nav a:hover{color:var(--ink)}
@@ -110,6 +111,12 @@ export function renderLanding({ version, downloads, repoUrl }) {
   /* --------------------------------------------------------------- sections */
   section{padding:110px 0 88px}
   section.light{background:var(--wash)}
+  /* The drawings are white windows; on a near-white block they vanish, so the
+     section they sit in is dark and they read as screens again. */
+  section.dark{background:var(--ink); color:#fff}
+  section.dark .lede{color:rgb(255 255 255 / .68)}
+  section.dark ul.checks li{color:rgb(255 255 255 / .66)}
+  section.dark ul.checks b{color:#fff}
   h2{font-size:38px; font-weight:600; line-height:1.15; margin:0 0 14px; letter-spacing:-.015em}
   .lede{font-size:18px; color:var(--muted); max-width:60ch; margin:0 0 40px}
   .kicker{
@@ -125,7 +132,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
     .hero h1{font-size:34px} h2{font-size:27px} section{padding:64px 0 56px}
   }
 
-  .shot svg{display:block; width:100%; height:auto; border-radius:12px; box-shadow:0 14px 40px rgb(5 19 32 / .12)}
+  .shot svg{display:block; width:100%; height:auto; border-radius:12px; box-shadow:0 24px 60px rgb(0 0 0 / .4)}
 
   ul.checks{list-style:none; padding:0; margin:0}
   ul.checks li{position:relative; padding-left:28px; margin-bottom:16px; color:var(--muted)}
@@ -157,10 +164,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
 
 <header class="nav">
   <div class="wrap">
-    <div class="brand">
-      ${logoMark(30)}
-      ai<span>dash</span>
-    </div>
+    <a class="brand" href="#top">${logoLockup()}</a>
     <div class="nav-spacer"></div>
     <a href="#usage" class="hide-sm">Usage</a>
     <a href="#sessions" class="hide-sm">Sessions</a>
@@ -217,7 +221,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
   </div>
 </section>
 
-<section class="light" id="sessions">
+<section class="dark" id="sessions">
   <div class="wrap">
     <div class="split flip">
       <div>

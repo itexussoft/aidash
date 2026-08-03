@@ -179,12 +179,25 @@ export function sessionsMockup() {
 </svg>`;
 }
 
-/** The gauge mark, matching the application icon. */
-export function logoMark(size = 30) {
+/**
+ * The logo lockup: the gauge glyph and the wordmark as one unit.
+ *
+ * The earlier version set the app icon — a dark rounded tile — beside the name,
+ * which reads as an icon pasted next to a label rather than a logo. The tile is
+ * gone; the ring now sits at cap height as a glyph, and the green lives only in
+ * the arc so it is not competing with a coloured half of the word.
+ */
+export function logoLockup({ onDark = false } = {}) {
+	const ink = onDark ? '#ffffff' : INK;
+	const track = onDark ? 'rgb(255 255 255 / .22)' : '#d7dce0';
+	// "dash" carries the accent, the same green as the filled arc, so the mark
+	// and the word are visibly one thing rather than two objects side by side.
 	return `
-<svg class="mark" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
-  <rect width="100" height="100" rx="24" fill="${INK}"/>
-  <circle cx="50" cy="50" r="24" fill="none" stroke="#26333f" stroke-width="11.5"/>
-  <path d="M 50 26 A 24 24 0 1 1 26.5 55.5" fill="none" stroke="${ACCENT}" stroke-width="11.5" stroke-linecap="butt"/>
-</svg>`;
+<span class="lockup">
+  <svg class="lockup-mark" viewBox="0 0 40 40" aria-hidden="true">
+    <circle cx="20" cy="20" r="14" fill="none" stroke="${track}" stroke-width="7"/>
+    <path d="M 20 6 A 14 14 0 1 1 6.3 23.3" fill="none" stroke="${ACCENT}" stroke-width="7"/>
+  </svg>
+  <span class="lockup-word" style="color:${ink}">ai<span style="color:${ACCENT}">dash</span></span>
+</span>`;
 }
