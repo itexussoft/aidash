@@ -16,6 +16,10 @@
  */
 
 import { escapeHtml, relativeTime } from './render.js';
+import { notify, busy, done, failed, reason } from './notify.js';
+
+/** A cancelled dialog is not an event worth announcing. */
+const notifyNothing = () => notify('');
 
 const UNINDEXED = 'unindexed';
 const CODEX = 'codex';
@@ -38,10 +42,9 @@ let renaming = null;
 const formatSize = (bytes) =>
 	bytes == null ? null : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-function setStatus(message, tone = 'muted') {
+/** The standing summary under the heading — what is here, not what just happened. */
+function setSummary(message) {
 	statusLabel.textContent = message ?? '';
-	// Keep the layout class; only the tone varies.
-	statusLabel.className = `head-meta ${tone === 'muted' ? '' : tone}`.trim();
 }
 
 const accountName = (account) => account.email ?? `account ${account.accountUuid.slice(0, 8)}`;
@@ -203,12 +206,13 @@ async function runAction(action, card) {
 	}
 
 	if (action === 'export') {
-		setStatus('exporting…');
+		busy('Exporting…');
 		try {
 			const result = await window.aidash.sessions.export(data);
-			setStatus(result ? `exported ${result.messages} messages to ${result.path}` : '', result ? 'ok-text' : 'muted');
+			if (result) done(`Exported ${result.messages} messages`);
+			else notifyNothing();
 		} catch (err) {
-			setStatus(clean(err), 'error');
+			failed(reason(err));
 		}
 		return;
 	}
@@ -221,15 +225,15 @@ async function runAction(action, card) {
 			if (next) {
 				view = next;
 				paintSessions();
-				setStatus('deleted', 'ok-text');
+				done('Session deleted');
+			} else {
+				notifyNothing();
 			}
 		} catch (err) {
-			setStatus(clean(err), 'error');
+			failed(reason(err));
 		}
 	}
 }
-
-const clean = (err) => String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, '');
 
 async function saveRename() {
 	const title = renameInput.value.trim();
@@ -242,9 +246,9 @@ async function saveRename() {
 		view = await window.aidash.sessions.rename({ ...renaming, title });
 		renameDialog.close();
 		paintSessions();
-		setStatus('renamed', 'ok-text');
+		done('Session renamed');
 	} catch (err) {
-		renameError.textContent = clean(err);
+		renameError.textContent = reason(err);
 		renameError.hidden = false;
 	}
 }
@@ -319,27 +323,27 @@ function wireCards() {
 			try {
 				let next;
 				if (source.tool !== target.tool) {
-					setStatus('copying across tools…');
+					busy('Copying across tools…');
 					next = await window.aidash.sessions.transfer({
 						fromTool: source.tool,
 						transcript: source.transcript,
 						title: source.title,
 						toAccountPath: target.path ?? null,
 					});
-					if (next) setStatus('copied — restart the receiving app to see it', 'ok-text');
-					else setStatus('');
+					if (next) done('Copied — restart the receiving app to see it');
+					else notifyNothing();
 				} else if (source.fromColumn === UNINDEXED) {
-					setStatus('adding…');
+					busy('Adding…');
 					next = await window.aidash.sessions.adopt({ transcriptFile: source.transcript, toAccountPath: target.path });
-					setStatus('added — restart Claude Code to see it there', 'ok-text');
+					done('Added — restart Claude Code to see it there');
 				} else {
-					setStatus('moving…');
+					busy('Moving…');
 					next = await window.aidash.sessions.move({
 						fromFile: source.entryFile,
 						cliSessionId: source.cliSessionId,
 						toAccountPath: target.path,
 					});
-					setStatus('moved — restart Claude Code to see it there', 'ok-text');
+					done('Moved — restart Claude Code to see it there');
 				}
 
 				if (next) {
@@ -347,7 +351,7 @@ function wireCards() {
 					paintSessions();
 				}
 			} catch (err) {
-				setStatus(clean(err), 'error');
+				failed(reason(err));
 			}
 		});
 	}
@@ -356,14 +360,14 @@ function wireCards() {
 /* -------------------------------------------------------------------- load */
 
 export async function rescan() {
-	setStatus('scanning…');
+	busy('Scanning…');
 	try {
 		view = await window.aidash.sessions.scan();
 		paintSessions();
 		const claude = view.accounts.reduce((n, a) => n + a.sessions, 0);
 		const codex = view.codex?.sessions ?? 0;
 		const orphans = view.unindexed ?? 0;
-		setStatus(
+		setSummary(
 			[
 				`${claude} Claude`,
 				codex ? `${codex} Codex` : null,
@@ -373,8 +377,9 @@ export async function rescan() {
 				.filter(Boolean)
 				.join(' · '),
 		);
+		notify('');
 	} catch (err) {
-		setStatus(clean(err), 'error');
+		failed(reason(err));
 	}
 }
 

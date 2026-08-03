@@ -7,6 +7,7 @@
 
 import { renderCard, refreshLabel, escapeHtml, applyBarWidths } from './render.js';
 import { rescan as rescanSessions } from './utils.js';
+import { busy, done, failed, reason } from './notify.js';
 
 // Opening the window refreshes when the data is older than this. There is no
 // background polling: the app only reaches out while you are looking at it.
@@ -105,6 +106,7 @@ function paint() {
 			btn.textContent = 'removing…';
 			state = await window.aidash.removeAccount(btn.dataset.id);
 			paint();
+			done('Account removed');
 		});
 	}
 
@@ -139,6 +141,7 @@ async function saveRename() {
 		state = await window.aidash.renameAccount(renamingId, label);
 		renameDialog.close();
 		paint();
+		done('Account renamed');
 	} catch (err) {
 		renameError.textContent = String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, '');
 		renameError.hidden = false;
@@ -157,8 +160,15 @@ renameInput.addEventListener('keydown', (e) => {
 async function refresh() {
 	refreshBtn.disabled = true;
 	refreshBtn.textContent = 'Refreshing…';
+	busy('Refreshing usage…');
 	try {
 		state = await window.aidash.refresh();
+		// One card failing is reported on the card itself; this is about the run.
+		const failedCount = state.accounts.filter((a) => a.lastError).length;
+		if (failedCount) failed(`${failedCount} account${failedCount === 1 ? '' : 's'} could not be refreshed`);
+		else done('Usage up to date');
+	} catch (err) {
+		failed(reason(err));
 	} finally {
 		refreshBtn.disabled = false;
 		refreshBtn.textContent = 'Refresh';
@@ -238,6 +248,7 @@ async function beginAdd() {
 		.then(async () => {
 			dialog.close();
 			await refresh();
+			done('Account added');
 		})
 		.catch((err) => failAdd(String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, '')))
 		.finally(() => {

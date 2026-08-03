@@ -8,18 +8,22 @@
 		<link rel="stylesheet" href="style.css" />
 	</head>
 	<body>
-		<div class="drag-region"></div>
+		<!-- Pinned: the tabs and any notification stay reachable however far the
+		     project list is scrolled. -->
+		<header class="app-bar">
+			<div class="drag-region"></div>
+			<nav class="tabs">
+				<button class="tab chosen" data-tab="usage">Usage</button>
+				<button class="tab" data-tab="utils">Local Sessions</button>
+				<output id="toast" class="toast" aria-live="polite"></output>
+			</nav>
+		</header>
 
 		<div id="update-banner" class="update-banner" hidden>
 			<span id="update-text"></span>
 			<button id="update-download" class="primary">Download</button>
 			<button id="update-dismiss" title="Dismiss">×</button>
 		</div>
-
-		<nav class="tabs">
-			<button class="tab chosen" data-tab="usage">Usage</button>
-			<button class="tab" data-tab="utils">Local Sessions</button>
-		</nav>
 
 		<!-- ------------------------------------------------------------ Usage -->
 		<section class="page" data-page="usage">

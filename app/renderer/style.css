@@ -85,7 +85,9 @@
 
 body {
 	margin: 0;
-	padding: 0 var(--step-5) var(--step-6);
+	/* No horizontal padding here: the pinned bar has to span edge to edge, so
+	   the pages carry their own gutters instead. */
+	padding: 0 0 var(--step-6);
 	background: var(--bg);
 	color: var(--fg);
 	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
@@ -104,6 +106,25 @@ body {
 .drag-region {
 	height: 34px;
 	-webkit-app-region: drag;
+}
+
+/*
+ * Pinned so the tabs and any notification stay reachable however far the
+ * project list is scrolled. Opaque, or the content would show through as it
+ * passes underneath.
+ */
+.app-bar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	background: var(--bg);
+	padding: 0 var(--step-5);
+}
+
+.page,
+.update-banner {
+	padding-left: var(--step-5);
+	padding-right: var(--step-5);
 }
 
 /* ------------------------------------------------------------------ type */
@@ -197,6 +218,7 @@ button.ghost:hover:not(:disabled) {
 
 .tabs {
 	display: flex;
+	align-items: stretch;
 	gap: var(--step-1);
 	border-bottom: 1px solid var(--line);
 	margin-bottom: var(--step-5);
@@ -212,6 +234,67 @@ button.ghost:hover:not(:disabled) {
 	color: var(--fg);
 	font-weight: 600;
 	border-bottom-color: var(--accent);
+}
+
+/*
+ * Notifications live on the bar rather than in a heading: they are things that
+ * just happened, and a heading is where standing facts go. They fade on their
+ * own so the bar returns to rest.
+ */
+.toast {
+	margin-left: auto;
+	align-self: center;
+	font-size: 12px;
+	color: var(--muted);
+	opacity: 0;
+	transform: translateY(-2px);
+	transition:
+		opacity 0.9s ease,
+		transform 0.25s ease;
+	pointer-events: none;
+	max-width: 52ch;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding-left: var(--step-4);
+}
+.toast.showing {
+	opacity: 1;
+	transform: none;
+	/* Appearing should be brisk; only the disappearing is slow. */
+	transition:
+		opacity 0.15s ease,
+		transform 0.15s ease;
+}
+.toast.leaving {
+	opacity: 0;
+	transition: opacity 0.9s ease;
+}
+.toast.ok {
+	color: var(--ok);
+}
+.toast.error {
+	color: var(--crit);
+}
+.toast.busy::after {
+	content: '';
+	display: inline-block;
+	width: 5px;
+	height: 5px;
+	margin-left: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	animation: pulse 1.1s ease-in-out infinite;
+	vertical-align: middle;
+}
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 0.25;
+	}
+	50% {
+		opacity: 1;
+	}
 }
 
 /* --------------------------------------------------------- page headings */
@@ -257,7 +340,7 @@ button.ghost:hover:not(:disabled) {
 .lede {
 	font-size: 13px;
 	color: var(--muted);
-	max-width: 78ch;
+	max-width: none;
 	margin: 0 0 var(--step-3);
 }
 
@@ -272,7 +355,6 @@ button.ghost:hover:not(:disabled) {
 	font-size: 12.5px;
 	color: var(--muted);
 	line-height: 1.6;
-	max-width: 90ch;
 	margin-bottom: var(--step-5);
 }
 .notice strong {
