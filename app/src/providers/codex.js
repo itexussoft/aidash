@@ -13,7 +13,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { locate, spawnOptionsFor } from '../locate.js';
+import { locate, spawnable } from '../locate.js';
 
 export function findBinary() {
 	return locate('codex');
@@ -27,13 +27,15 @@ async function withSession(configDir, body) {
 	const binary = findBinary();
 	if (!binary) throw new Error('Codex is not installed on this machine');
 
-	const proc = spawn(binary, ['app-server'], {
+	const { command, options } = spawnable(binary);
+
+	const proc = spawn(command, ['app-server'], {
 		env: { ...process.env, CODEX_HOME: configDir },
 		// stderr is captured rather than discarded: a launcher that cannot start
 		// says why there and nowhere else, and discarding it turned an instant,
 		// explainable failure into a silent thirty-second timeout.
 		stdio: ['pipe', 'pipe', 'pipe'],
-		...spawnOptionsFor(binary),
+		...options,
 	});
 
 	const pending = new Map();

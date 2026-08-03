@@ -15,7 +15,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readClaudeCredentials, writeClaudeCredentials } from '../keychain.js';
-import { locate, spawnOptionsFor } from '../locate.js';
+import { locate, spawnable } from '../locate.js';
 import { claudeEnv } from '../claude-config.js';
 
 const run = promisify(execFile);
@@ -35,9 +35,10 @@ export async function authStatus(configDir) {
 	try {
 		const binary = findBinary();
 		if (!binary) return { loggedIn: false };
-		const { stdout } = await run(binary, ['auth', 'status'], {
+		const { command, options } = spawnable(binary);
+		const { stdout } = await run(command, ['auth', 'status'], {
 			env: { ...process.env, ...claudeEnv(configDir) },
-			...spawnOptionsFor(binary),
+			...options,
 		});
 		return JSON.parse(stdout);
 	} catch {
@@ -57,11 +58,13 @@ export async function login(configDir, { onUrl, onNeedCode, signal } = {}) {
 	const binary = findBinary();
 	if (!binary) throw new Error('Claude Code is not installed on this machine');
 
+	const { command, options } = spawnable(binary);
+
 	await new Promise((resolve, reject) => {
-		const proc = spawn(binary, ['auth', 'login', '--claudeai'], {
+		const proc = spawn(command, ['auth', 'login', '--claudeai'], {
 			env: { ...process.env, ...claudeEnv(configDir) },
 			stdio: ['pipe', 'pipe', 'pipe'],
-			...spawnOptionsFor(binary),
+			...options,
 		});
 
 		let seen = '';

@@ -39,6 +39,11 @@ jobs:
 
       - run: npm ci
 
+      # Run on both runners, not once on Linux. The bugs worth catching here are
+      # the ones that only exist on one platform — path encoding, quoting a
+      # command for cmd.exe — and those are invisible everywhere else.
+      - run: npm test
+
       - name: Build
         # Nothing here is signed, and electron-builder otherwise stops to look
         # for an identity it will not find.

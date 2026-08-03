@@ -36,7 +36,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { locate, spawnOptionsFor } from './locate.js';
+import { locate, spawnable } from './locate.js';
 import { DEFAULT_CONFIG_DIR, claudeEnv } from './claude-config.js';
 import { readClaudeCredentials } from './keychain.js';
 import { listSessions as listCodexSessions, DEFAULT_CODEX_HOME } from './codex-sessions.js';
@@ -76,9 +76,10 @@ export async function identifyRoot(dir) {
 	try {
 		const binary = locate('claude');
 		if (!binary) return { email: null, orgId: null, loggedIn: false, expiresAt, expired };
-		const { stdout } = await run(binary, ['auth', 'status'], {
+		const { command, options } = spawnable(binary);
+		const { stdout } = await run(command, ['auth', 'status'], {
 			env: { ...process.env, ...claudeEnv(dir) },
-			...spawnOptionsFor(binary),
+			...options,
 		});
 		const status = JSON.parse(stdout);
 		return {
@@ -148,8 +149,26 @@ async function readEntry(file) {
 	}
 }
 
-/** Encoded transcript folder name for a working directory. */
-const encodeCwd = (cwd) => cwd.replace(/[/\\]/g, '-');
+/**
+ * Encoded transcript folder name for a working directory.
+ *
+ * Claude Code replaces every character that is not an ASCII letter or digit,
+ * not just the path separators. Confirmed by running it in directories built to
+ * tell the candidate rules apart: `a_b c.d-e` became `a-b-c-d-e`, and a Cyrillic
+ * name became one dash per letter.
+ *
+ * Matching it exactly matters more than it looks. Replacing only separators
+ * missed three of seventeen projects on the machine this was written on —
+ * anything with a dot in the path, such as a domain-named folder or a
+ * `.claude/worktrees` checkout. On Windows it would have been worse than a miss:
+ * `C:\...` would have produced `C:-...`, and a colon cannot exist in an NTFS
+ * name, so creating the folder would have thrown rather than come up empty.
+ *
+ * The collapse is lossy — two paths differing only in punctuation encode alike —
+ * but that is Claude Code's behaviour, and this has to find its folders, not
+ * design better ones.
+ */
+export const encodeCwd = (cwd) => cwd.replace(/[^a-zA-Z0-9]/g, '-');
 
 /** Size and branch from the transcript, when it is still on disk. */
 async function transcriptFacts(cliSessionId, cwd, transcriptsRoot = TRANSCRIPTS) {

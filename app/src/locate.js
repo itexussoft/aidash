@@ -70,11 +70,29 @@ export function candidates(command) {
 	return [...new Set(found.filter((p) => p && existsSync(p)))];
 }
 
-/** Spawn options for a located binary. */
-export function spawnOptionsFor(binaryPath) {
-	// A `.cmd` or `.bat` is a batch script, which Windows can only run through
-	// its command interpreter — spawning it directly fails with EINVAL.
-	return isWindows && /\.(cmd|bat)$/i.test(binaryPath ?? '') ? { shell: true } : {};
+/**
+ * Whether this path can only be run through the Windows command interpreter.
+ *
+ * `platform` is a parameter so the Windows branch can be tested from a Mac.
+ * Everything here is Windows-only behaviour that is invisible on the machine it
+ * was written on, which is exactly how it shipped broken the first time.
+ */
+const needsShell = (binaryPath, platform) => platform === 'win32' && /\.(cmd|bat)$/i.test(binaryPath ?? '');
+
+/**
+ * The command and options to spawn a located binary with, as one value.
+ *
+ * These have to travel together. Under `shell: true` Node builds the command
+ * line as `[file, ...args].join(' ')` with no quoting, so a path containing a
+ * space — `C:\Users\Ivan Petrov\AppData\Roaming\npm\claude.cmd`, an ordinary
+ * Windows home directory — is split at the space and `cmd` tries to run
+ * `C:\Users\Ivan`. A `.cmd` is a batch script and needs that shell, so the two
+ * decisions are one decision, made here rather than at each call site.
+ */
+export function spawnable(binaryPath, platform = process.platform) {
+	return needsShell(binaryPath, platform)
+		? { command: `"${binaryPath}"`, options: { shell: true } }
+		: { command: binaryPath, options: {} };
 }
 
 /**
@@ -85,11 +103,12 @@ export function spawnOptionsFor(binaryPath) {
  */
 function works(binaryPath) {
 	try {
-		const result = spawnSync(binaryPath, ['--version'], {
+		const { command, options } = spawnable(binaryPath);
+		const result = spawnSync(command, ['--version'], {
 			encoding: 'utf8',
 			timeout: 10000,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			...spawnOptionsFor(binaryPath),
+			...options,
 		});
 		if (result.error || result.status !== 0) return false;
 		// A launcher that cannot find its payload prints the failure and still

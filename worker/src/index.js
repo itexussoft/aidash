@@ -16,26 +16,33 @@ const REPO = 'https://github.com/itexussoft/aidash';
 /** Release assets are served straight from the GitHub release. */
 const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`;
 
+// The one line `npm run release` rewrites. Everything below derives from it, so
+// a bump cannot leave a download link pointing at the previous version's files.
+const VERSION = '0.1.0';
+
 /**
- * The published release.
+ * Where each platform's installer lives, under the names electron-builder gives
+ * them. The Windows one has spaces — "aidash Setup 0.1.0.exe" — and GitHub
+ * serves such assets with the spaces turned into dots, which is what the link
+ * has to say.
  *
- * Bumped by `npm run release`, which tags and pushes; GitHub Actions builds
- * every platform and attaches the files under exactly these names. A platform
- * missing from `downloads` is shown on the landing as not yet built rather than
- * linked to a 404.
+ * A platform missing here is shown on the landing as not yet built rather than
+ * linked to a 404. Windows on ARM is deliberately absent: it runs the x64 build
+ * under emulation, and shipping an untested native build is worse than that.
  */
+const downloadsFor = (version) => ({
+	'darwin-arm64': asset(version, `aidash-${version}-arm64.dmg`),
+	'darwin-x64': asset(version, `aidash-${version}.dmg`),
+	'win32-x64': asset(version, `aidash.Setup.${version}.exe`),
+});
+
+/** The published release. */
 const RELEASE = {
-	version: '0.1.0',
+	version: VERSION,
 	notes: null,
 	url: 'https://aidash.itex.us',
 	repo: REPO,
-	downloads: {
-		'darwin-arm64': asset('0.1.0', 'aidash-0.1.0-arm64.dmg'),
-		'darwin-x64': asset('0.1.0', 'aidash-0.1.0.dmg'),
-		// GitHub turns spaces in asset names into dots, so the file electron-builder
-		// writes as "aidash Setup 0.1.0.exe" is served under this name.
-		'win32-x64': asset('0.1.0', 'aidash.Setup.0.1.0.exe'),
-	},
+	downloads: downloadsFor(VERSION),
 };
 
 export default {

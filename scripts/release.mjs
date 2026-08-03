@@ -42,12 +42,13 @@ pkg.version = requested;
 await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
 // The Worker serves the manifest the app polls, so it has to name the same
-// version the build will carry.
+// version the build will carry. One constant there, with the download URLs
+// derived from it, so this cannot bump the version and leave the links behind.
 const workerPath = join(ROOT, 'worker', 'src', 'index.js');
 const worker = await readFile(workerPath, 'utf8');
-const bumped = worker.replace(/(version:\s*')[\d.]+(')/, `$1${requested}$2`);
+const bumped = worker.replace(/(const VERSION = ')[\d.]+(')/, `$1${requested}$2`);
 if (bumped === worker) {
-	console.error('\nCould not find the version in worker/src/index.js — check the RELEASE block.\n');
+	console.error('\nCould not find `const VERSION` in worker/src/index.js.\n');
 	process.exit(1);
 }
 await writeFile(workerPath, bumped);

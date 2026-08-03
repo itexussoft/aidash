@@ -9,6 +9,8 @@
  */
 
 import { renderCard, refreshLabel, toEpochMs, relativeTime, barColour } from './renderer/render.js';
+import { encodeCwd } from './src/sessions.js';
+import { spawnable } from './src/locate.js';
 
 let failures = 0;
 const check = (name, cond) => {
@@ -402,6 +404,34 @@ console.log('\ncross-tool copy');
 	const markdown = toMarkdown({ title: 'T', cwd: '/c', messages: [{ role: 'user', text: 'a' }] }, 'claude');
 	check('the export says it is dialogue only', markdown.startsWith('# T') && markdown.includes('Dialogue only'));
 }
+
+/* ------------------------------------------------- cross-platform plumbing */
+
+console.log('\nworking-directory encoding');
+// Claude Code replaces every non-alphanumeric character, not just separators.
+// Derived by running it in directories built to tell the candidate rules apart.
+check('separators become dashes', encodeCwd('/Users/mad/proj') === '-Users-mad-proj');
+check('dots become dashes too', encodeCwd('/Users/mad/itexus.com') === '-Users-mad-itexus-com');
+check('so do underscores and spaces', encodeCwd('/a_b c') === '-a-b-c');
+check('dashes and digits survive', encodeCwd('/ai-usage-2') === '-ai-usage-2');
+// A Windows drive letter is the case that would have thrown rather than merely
+// missed: a colon cannot appear in an NTFS name.
+check('a drive colon is encoded', encodeCwd('C:\\Users\\mad\\proj') === 'C--Users-mad-proj');
+check('nothing illegal for NTFS survives', !/[:\\/?*"<>|]/.test(encodeCwd('C:\\a b\\c.d')));
+// Non-Latin names collapse to one dash per character. Lossy, but it is what
+// Claude Code does, and this has to find its folders rather than improve them.
+check('non-Latin collapses the way Claude Code collapses it', encodeCwd('/проект') === '-------');
+
+console.log('\nspawning the vendor clients');
+check('a plain binary is spawned directly', spawnable('/usr/local/bin/claude', 'darwin').command === '/usr/local/bin/claude');
+check('and needs no shell', spawnable('/usr/local/bin/claude', 'darwin').options.shell === undefined);
+check('an .exe needs no shell either', spawnable('C:\\Programs\\claude.exe', 'win32').options.shell === undefined);
+// A .cmd is a batch script, so it needs cmd.exe — and once a shell is involved
+// Node joins the command line without quoting, so a space in the path splits it.
+const shim = spawnable('C:\\Users\\Ivan Petrov\\AppData\\Roaming\\npm\\claude.cmd', 'win32');
+check('an npm .cmd shim goes through a shell', shim.options.shell === true);
+check('and is quoted, so a space in the home directory survives', shim.command.startsWith('"') && shim.command.endsWith('"'));
+check('a .cmd is only special on Windows', spawnable('/opt/claude.cmd', 'darwin').options.shell === undefined);
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);
