@@ -53,8 +53,10 @@
 			</header>
 
 			<p class="lede">
-				Sessions live inside whichever account recorded them. Drag one onto another account to move it there — within the same
-				project folder, since a session belongs to the directory it ran in.
+				Claude Code shows you only the sessions its index lists under the account you are signed in as, while the transcripts
+				themselves are shared. Drag a session onto another account to hand it over — within the same project folder, since a
+				session belongs to the directory it ran in. The transcript does not move; only which account can see it. Restart Claude
+				Code to pick up the change.
 			</p>
 
 			<div id="roots" class="roots"></div>
@@ -62,8 +64,8 @@
 
 			<section id="sessions-empty" class="empty" hidden>
 				<h2>No sessions found</h2>
-				<p>Nothing under <code>projects/</code> in the folders listed above.</p>
-				<p class="hint">If you use another account with a custom <code>CLAUDE_CONFIG_DIR</code>, add its folder to see it here.</p>
+				<p>Claude Code has not recorded any sessions on this machine yet.</p>
+				<p class="hint">Accounts are read from Claude Code's own session index. Add a config folder above if an account here is showing as an unnamed id.</p>
 			</section>
 		</section>
 

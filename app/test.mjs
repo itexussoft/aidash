@@ -170,45 +170,59 @@ check('but the true figure is still shown', overCard.includes('887%'));
 
 /* ----------------------------------------------------------- sessions tab */
 
-console.log('\nsession scanning and moving');
+console.log('\nsession index');
 {
-	const { scanRoot, scanAll, moveSession } = await import('./src/sessions.js');
-	const { mkdtemp, mkdir, writeFile, access } = await import('node:fs/promises');
+	const { scanAll, moveSession } = await import('./src/sessions.js');
+	const { mkdtemp, mkdir, writeFile, readdir } = await import('node:fs/promises');
 	const { tmpdir } = await import('node:os');
 	const { join } = await import('node:path');
 
-	const base = await mkdtemp(join(tmpdir(), 'aidash-sessions-'));
-	const A = join(base, 'account-a');
-	const B = join(base, 'account-b');
-	const PROJECT = '-Users-test-demo';
-	const SID = 'aaaaaaaa-0000-4000-8000-000000000001';
+	// Mirrors the desktop app's own layout:
+	//   <index>/<accountUuid>/<orgUuid>/local_<uuid>.json
+	// Sessions belong to an account by having an entry here, not by where the
+	// transcript sits — the transcripts are shared and carry no account at all.
+	const index = await mkdtemp(join(tmpdir(), 'aidash-index-'));
+	const A = join(index, 'account-a', 'org-a');
+	const B = join(index, 'account-b', 'org-b');
+	await mkdir(A, { recursive: true });
+	await mkdir(B, { recursive: true });
 
-	await mkdir(join(A, 'projects', PROJECT), { recursive: true });
-	await mkdir(join(B, 'projects', PROJECT), { recursive: true });
-	await mkdir(join(A, 'session-env', SID), { recursive: true });
+	const entry = (over) => ({
+		sessionId: 'local_1111',
+		cliSessionId: 'cli-1111',
+		cwd: '/Users/test/demo',
+		title: 'Demo session',
+		model: 'claude-opus-5',
+		lastActivityAt: 1785000000000,
+		isArchived: false,
+		...over,
+	});
+
+	await writeFile(join(A, 'local_1111.json'), JSON.stringify(entry()));
 	await writeFile(
-		join(A, 'projects', PROJECT, `${SID}.jsonl`),
-		`${JSON.stringify({ type: 'ai-title', aiTitle: 'Demo session' })}\n` +
-			`${JSON.stringify({ type: 'user', cwd: '/Users/test/demo', gitBranch: 'main', timestamp: '2026-08-01T10:00:00Z' })}\n`,
+		join(A, 'local_2222.json'),
+		JSON.stringify(entry({ sessionId: 'local_2222', cliSessionId: 'cli-2222', cwd: '/Users/test/other', title: 'Other' })),
 	);
 
-	const before = await scanRoot(A);
-	check('session found in its account', before[0]?.sessions.length === 1);
-	check('title read from the transcript head', before[0]?.sessions[0].title === 'Demo session');
-	// The encoded folder name is ambiguous when a directory contains a dash, so
-	// the recorded cwd is what gets displayed.
-	check('cwd taken from the transcript, not the folder name', before[0]?.cwd === '/Users/test/demo');
+	const before = await scanAll([], index);
+	check('both account/org pairs are listed', before.accounts.length === 2);
+	check('each project becomes a row', before.projects.length === 2);
+	const demo = before.projects.find((p) => p.cwd === '/Users/test/demo');
+	check('cwd comes from the entry, not a decoded folder name', Boolean(demo));
+	check('sessions sit under the account that lists them', demo.byAccount['account-a/org-a']?.length === 1);
+	check('the other account starts empty for that project', !demo.byAccount['account-b/org-b']);
+	check('title carried through', demo.byAccount['account-a/org-a'][0].title === 'Demo session');
+	// The transcript for a synthetic entry does not exist, and that has to be
+	// visible rather than silently rendering as an ordinary session.
+	check('a missing transcript is reported', demo.byAccount['account-a/org-a'][0].transcript === null);
 
-	await moveSession({ fromDir: A, toDir: B, projectKey: PROJECT, sessionId: SID });
-	check('session leaves the source account', (await scanRoot(A)).length === 0);
-	check('session arrives in the destination', (await scanRoot(B))[0]?.sessions[0].id === SID);
-	check(
-		'session-env travels with it',
-		await access(join(B, 'session-env', SID)).then(
-			() => true,
-			() => false,
-		),
-	);
+	await moveSession({ fromFile: join(A, 'local_1111.json'), toAccountPath: B, cliSessionId: 'cli-1111' });
+	const after = await scanAll([], index);
+	const moved = after.projects.find((p) => p.cwd === '/Users/test/demo');
+	check('session leaves the source account', !moved.byAccount['account-a/org-a']);
+	check('session appears under the destination', moved.byAccount['account-b/org-b']?.length === 1);
+	check('the entry file itself moved', (await readdir(B)).includes('local_1111.json'));
+	check("the other project is untouched", after.projects.find((p) => p.cwd === '/Users/test/other').byAccount['account-a/org-a'].length === 1);
 
 	const rejects = async (fn) => {
 		try {
@@ -219,40 +233,25 @@ console.log('\nsession scanning and moving');
 		}
 	};
 
-	check('moving a vanished session is refused', /no longer where it was/.test(await rejects(() => moveSession({ fromDir: A, toDir: B, projectKey: PROJECT, sessionId: SID }))));
-	check('moving into the same account is refused', /same/.test(await rejects(() => moveSession({ fromDir: B, toDir: B, projectKey: PROJECT, sessionId: SID }))));
+	check(
+		'moving a vanished entry is refused',
+		/no longer where it was/.test(await rejects(() => moveSession({ fromFile: join(A, 'local_1111.json'), toAccountPath: B, cliSessionId: 'cli-1111' }))),
+	);
 
-	// Recreate the source so the destination now has a colliding id.
-	await writeFile(join(A, 'projects', PROJECT, `${SID}.jsonl`), '{}\n');
-	check('overwriting an existing session is refused', /already has a session/.test(await rejects(() => moveSession({ fromDir: A, toDir: B, projectKey: PROJECT, sessionId: SID }))));
+	// The same transcript listed twice under one account would read as two
+	// sessions that are really one.
+	await writeFile(join(A, 'local_3333.json'), JSON.stringify(entry({ sessionId: 'local_3333' })));
+	check(
+		'listing the same transcript twice is refused',
+		/already lists this session/.test(await rejects(() => moveSession({ fromFile: join(A, 'local_3333.json'), toAccountPath: B, cliSessionId: 'cli-1111' }))),
+	);
 
-	const view = await scanAll([
-		{ id: 'a', path: A, label: 'A' },
-		{ id: 'b', path: B, label: 'B' },
-	]);
-	const project = view.projects.find((p) => p.key === PROJECT);
-	check('one project row spans both accounts', Boolean(project?.byRoot.a && project?.byRoot.b));
-	check('both roots reported', view.roots.length === 2);
-
-	// The trap: Claude Code derives its keychain entry from CLAUDE_CONFIG_DIR,
-	// so setting the variable to the default directory makes it look for a
-	// suffixed entry that does not exist — and a signed-in account reports
-	// itself signed out.
 	const { claudeEnv, keychainService, DEFAULT_CONFIG_DIR } = await import('./src/claude-config.js');
 	check('default directory runs with no CLAUDE_CONFIG_DIR', Object.keys(claudeEnv(DEFAULT_CONFIG_DIR)).length === 0);
 	check('other directories do set it', claudeEnv('/tmp/other').CLAUDE_CONFIG_DIR === '/tmp/other');
 	check('default keychain entry is unsuffixed', keychainService(DEFAULT_CONFIG_DIR) === 'Claude Code-credentials');
 	check('other directories get a hashed suffix', /^Claude Code-credentials-[0-9a-f]{8}$/.test(keychainService('/tmp/other')));
 	check('the suffix distinguishes directories', keychainService('/tmp/a') !== keychainService('/tmp/b'));
-
-	// `claude auth status` answers from stored credentials and keeps reporting
-	// loggedIn once they expire, so the plan it returns can be months old. The
-	// expiry has to travel with it or a column would present stale metadata as
-	// current — which is how one account on one plan looked like two.
-	const { identifyRoot } = await import('./src/sessions.js');
-	const identity = await identifyRoot(A);
-	check('identity reports expiry alongside the plan', 'expired' in identity && 'expiresAt' in identity);
-	check('a directory with no credential is not called expired', identity.expired === false);
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');

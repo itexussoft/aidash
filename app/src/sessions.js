@@ -1,23 +1,29 @@
 /**
  * Claude Code session management.
  *
- * A Claude Code account keeps its transcripts under
- * `<config dir>/projects/<encoded cwd>/<session id>.jsonl`, where the encoded
- * name is the working directory with its slashes turned into dashes. Two
- * accounts used alternately on the same machine therefore hold sessions for the
- * same project in two different places, and moving one across is a file move.
+ * Two stores are involved, and confusing them is the trap:
  *
- * Two details make it more than that:
+ *   - The transcript is at
+ *     `~/.claude/projects/<cwd with slashes as dashes>/<cliSessionId>.jsonl`.
+ *     It is shared. Nothing in it says which account recorded it.
  *
- *   - `<config dir>/session-env/<session id>/` belongs to the session too and
- *     has to travel with it. On this machine every transcript had a matching
- *     entry, so leaving it behind would quietly split the session in half.
- *   - Transcripts reach tens of megabytes. Metadata is read from the head of
- *     the file only; `ai-title` lands within the first few tens of kilobytes,
- *     and the file's mtime is a better "last active" than parsing to the end.
+ *   - What the desktop app *lists* comes from its own index at
+ *     `~/Library/Application Support/Claude/claude-code-sessions/
+ *      <accountUuid>/<orgUuid>/local_<uuid>.json`,
+ *     each entry naming a `cliSessionId` and carrying the title, cwd and
+ *     timestamps.
+ *
+ * So a session belongs to an account by virtue of an index entry, not by where
+ * its transcript sits. Signing in as a different account changes which index
+ * directory is read, which is why the same project can look empty under one
+ * account and full under another.
+ *
+ * Moving a session therefore means moving its index entry. Moving the
+ * transcript would do nothing useful and would strand the entry that points at
+ * it.
  */
 
-import { readdir, stat, mkdir, rename, access, open, copyFile, rm } from 'node:fs/promises';
+import { readdir, stat, rename, access, open, readFile, mkdir, copyFile, rm } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -28,11 +34,16 @@ import { readClaudeCredentials } from './keychain.js';
 
 const run = promisify(execFile);
 
-// Enough to cover the session header and the ai-title record without ever
-// pulling a large transcript into memory.
-const HEAD_BYTES = 128 * 1024;
-
 export const DEFAULT_ROOT = DEFAULT_CONFIG_DIR;
+
+/** Where the desktop app keeps the index that decides what it shows. */
+export const INDEX_ROOT = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
+
+const TRANSCRIPTS = join(DEFAULT_CONFIG_DIR, 'projects');
+
+// Enough for the session header; `ai-title` lands within the first few tens of
+// kilobytes and transcripts reach tens of megabytes.
+const HEAD_BYTES = 64 * 1024;
 
 const exists = (p) =>
 	access(p).then(
@@ -40,74 +51,13 @@ const exists = (p) =>
 		() => false,
 	);
 
-/** Reads the first bytes of a file without loading the whole thing. */
-async function readHead(path, bytes = HEAD_BYTES) {
-	const handle = await open(path, 'r');
-	try {
-		const buffer = Buffer.alloc(bytes);
-		const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
-		return buffer.subarray(0, bytesRead).toString('utf8');
-	} finally {
-		await handle.close();
-	}
-}
+/* ------------------------------------------------------------- identities */
 
 /**
- * Session metadata, from the head of the transcript plus filesystem stats.
+ * Which account a config directory is signed in as.
  *
- * The last line of the head slice is usually truncated, so parse failures are
- * expected and ignored rather than treated as corruption.
- */
-async function readSessionMeta(file) {
-	const [head, stats] = await Promise.all([readHead(file), stat(file)]);
-
-	let title = null;
-	let cwd = null;
-	let branch = null;
-	let version = null;
-	let firstAt = null;
-	let messages = 0;
-
-	for (const line of head.split('\n')) {
-		if (!line.trim()) continue;
-		let record;
-		try {
-			record = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (record.type === 'ai-title' && record.aiTitle) title = record.aiTitle;
-		if (!cwd && record.cwd) cwd = record.cwd;
-		if (!branch && record.gitBranch) branch = record.gitBranch;
-		if (!version && record.version) version = record.version;
-		if (!firstAt && record.timestamp) firstAt = record.timestamp;
-		if (record.type === 'user' || record.type === 'assistant') messages++;
-	}
-
-	return {
-		id: basename(file, '.jsonl'),
-		title,
-		cwd,
-		branch,
-		version,
-		firstAt,
-		// mtime is both cheaper and more truthful than the last timestamp we
-		// could see, since we only ever read the head.
-		lastAt: stats.mtimeMs,
-		sizeBytes: stats.size,
-		// Only what the head showed; enough to tell a stub from real work.
-		messagesAtLeast: messages,
-	};
-}
-
-/**
- * Identifies which account a config directory is signed in as.
- *
- * `claude auth status` answers from stored credentials rather than from the
- * server, and reports `loggedIn: true` even once they have expired — so both
- * the plan and the address it gives can be months out of date. The expiry is
- * read alongside them so a column can say which of those it is, instead of
- * quietly presenting stale metadata as current.
+ * `claude auth status` answers from stored credentials rather than the server
+ * and keeps reporting loggedIn once they expire, so the expiry is read too.
  */
 export async function identifyRoot(dir) {
 	const credential = await readClaudeCredentials(dir).catch(() => null);
@@ -116,7 +66,7 @@ export async function identifyRoot(dir) {
 
 	try {
 		const binary = locate('claude');
-		if (!binary) return { email: null, plan: null, loggedIn: false, expiresAt, expired };
+		if (!binary) return { email: null, orgId: null, loggedIn: false, expiresAt, expired };
 		const { stdout } = await run(binary, ['auth', 'status'], {
 			env: { ...process.env, ...claudeEnv(dir) },
 			...spawnOptionsFor(binary),
@@ -124,131 +74,191 @@ export async function identifyRoot(dir) {
 		const status = JSON.parse(stdout);
 		return {
 			email: status.email ?? null,
-			// Stored, not live. Displayed only where it can be trusted.
-			plan: status.subscriptionType ?? null,
+			orgId: status.orgId ?? null,
+			orgName: status.orgName ?? null,
 			loggedIn: Boolean(status.loggedIn),
 			expiresAt,
 			expired,
 		};
 	} catch {
-		return { email: null, plan: null, loggedIn: false, expiresAt, expired };
+		return { email: null, orgId: null, loggedIn: false, expiresAt, expired };
 	}
 }
 
-/** Every project folder and session inside one config directory. */
-export async function scanRoot(dir) {
-	const projectsDir = join(dir, 'projects');
-	if (!(await exists(projectsDir))) return [];
-
-	const entries = await readdir(projectsDir, { withFileTypes: true });
-	const projects = await Promise.all(
-		entries
-			.filter((e) => e.isDirectory())
-			.map(async (entry) => {
-				const path = join(projectsDir, entry.name);
-				const files = (await readdir(path)).filter((f) => f.endsWith('.jsonl'));
-
-				const sessions = (
-					await Promise.all(
-						files.map((f) =>
-							readSessionMeta(join(path, f)).catch(() => null),
-						),
-					)
-				).filter(Boolean);
-
-				sessions.sort((a, b) => b.lastAt - a.lastAt);
-
-				return {
-					key: entry.name,
-					// The encoded name cannot be decoded reliably — a directory whose
-					// own name contains a dash is ambiguous — so prefer the cwd the
-					// transcript recorded.
-					cwd: sessions.find((s) => s.cwd)?.cwd ?? entry.name,
-					sessions,
-				};
-			}),
+/**
+ * Names the accounts the index knows about.
+ *
+ * The index identifies an account by UUID only, so the readable name comes from
+ * whichever config directories are signed in — matched on the organisation id,
+ * which both sides report.
+ */
+async function nameAccounts(configDirs) {
+	const byOrg = new Map();
+	await Promise.all(
+		configDirs.map(async (dir) => {
+			const identity = await identifyRoot(dir);
+			if (identity.orgId && identity.email && !byOrg.has(identity.orgId)) {
+				byOrg.set(identity.orgId, { email: identity.email, orgName: identity.orgName, expired: identity.expired });
+			}
+		}),
 	);
+	return byOrg;
+}
 
-	return projects.filter((p) => p.sessions.length > 0);
+/* ----------------------------------------------------------------- index */
+
+/** Every account/organisation pair the desktop app has recorded sessions for. */
+export async function listIndexAccounts(indexRoot = INDEX_ROOT) {
+	if (!(await exists(indexRoot))) return [];
+
+	const accounts = [];
+	for (const account of await readdir(indexRoot, { withFileTypes: true })) {
+		if (!account.isDirectory()) continue;
+		const accountDir = join(indexRoot, account.name);
+		for (const org of await readdir(accountDir, { withFileTypes: true })) {
+			if (!org.isDirectory()) continue;
+			accounts.push({
+				id: `${account.name}/${org.name}`,
+				accountUuid: account.name,
+				orgUuid: org.name,
+				path: join(accountDir, org.name),
+			});
+		}
+	}
+	return accounts;
+}
+
+/** Reads one index entry, ignoring anything unreadable. */
+async function readEntry(file) {
+	try {
+		const entry = JSON.parse(await readFile(file, 'utf8'));
+		if (!entry?.cliSessionId) return null;
+		return { file, ...entry };
+	} catch {
+		return null;
+	}
+}
+
+/** Encoded transcript folder name for a working directory. */
+const encodeCwd = (cwd) => cwd.replace(/[/\\]/g, '-');
+
+/** Size and branch from the transcript, when it is still on disk. */
+async function transcriptFacts(cliSessionId, cwd) {
+	const file = join(TRANSCRIPTS, encodeCwd(cwd), `${cliSessionId}.jsonl`);
+	if (!(await exists(file))) return { transcript: null, sizeBytes: null, branch: null };
+
+	let branch = null;
+	try {
+		const handle = await open(file, 'r');
+		try {
+			const buffer = Buffer.alloc(HEAD_BYTES);
+			const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
+			for (const line of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
+				if (!line.trim()) continue;
+				try {
+					const record = JSON.parse(line);
+					if (record.gitBranch) {
+						branch = record.gitBranch;
+						break;
+					}
+				} catch {
+					/* the last line of the slice is usually truncated */
+				}
+			}
+		} finally {
+			await handle.close();
+		}
+	} catch {
+		/* unreadable transcript is not fatal — the entry still lists */
+	}
+
+	const stats = await stat(file).catch(() => null);
+	return { transcript: file, sizeBytes: stats?.size ?? null, branch };
 }
 
 /**
- * Merges the per-root scans into one view keyed by project.
+ * The whole picture: accounts across the top, projects down the side.
  *
- * Grouping by project rather than by account is what makes the rule visible:
- * a session can only move between accounts within its own row.
+ * Grouped by project because that is the rule made visible — a session belongs
+ * to the directory it ran in, so it only ever moves sideways within its row.
  */
-export async function scanAll(roots) {
-	const scans = await Promise.all(
-		roots.map(async (root) => ({
-			root,
-			identity: await identifyRoot(root.path),
-			projects: await scanRoot(root.path),
-		})),
-	);
+export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = INDEX_ROOT) {
+	const [indexAccounts, namesByOrg] = await Promise.all([listIndexAccounts(indexRoot), nameAccounts(configDirs)]);
 
 	const byProject = new Map();
-	for (const scan of scans) {
-		for (const project of scan.projects) {
-			if (!byProject.has(project.key)) byProject.set(project.key, { key: project.key, cwd: project.cwd, byRoot: {} });
-			const entry = byProject.get(project.key);
-			if (project.cwd && !entry.cwd.startsWith('/')) entry.cwd = project.cwd;
-			entry.byRoot[scan.root.id] = project.sessions;
-		}
+
+	const accounts = await Promise.all(
+		indexAccounts.map(async (account) => {
+			const files = (await readdir(account.path)).filter((f) => f.endsWith('.json'));
+			const entries = (await Promise.all(files.map((f) => readEntry(join(account.path, f))))).filter(Boolean);
+
+			for (const entry of entries) {
+				if (!entry.cwd) continue;
+				const facts = await transcriptFacts(entry.cliSessionId, entry.cwd);
+
+				if (!byProject.has(entry.cwd)) byProject.set(entry.cwd, { cwd: entry.cwd, byAccount: {} });
+				const project = byProject.get(entry.cwd);
+				(project.byAccount[account.id] ??= []).push({
+					id: entry.sessionId,
+					cliSessionId: entry.cliSessionId,
+					file: entry.file,
+					title: entry.title ?? null,
+					model: entry.model ?? null,
+					archived: Boolean(entry.isArchived),
+					lastAt: entry.lastActivityAt ?? entry.createdAt ?? null,
+					...facts,
+				});
+			}
+
+			const named = namesByOrg.get(account.orgUuid);
+			return {
+				...account,
+				email: named?.email ?? null,
+				orgName: named?.orgName ?? null,
+				expired: named?.expired ?? false,
+				sessions: entries.length,
+			};
+		}),
+	);
+
+	for (const project of byProject.values()) {
+		for (const list of Object.values(project.byAccount)) list.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
 	}
 
 	const projects = [...byProject.values()].sort((a, b) => a.cwd.localeCompare(b.cwd));
 
-	return {
-		// The live probe wins when it answers, but must not blank an email the
-		// enrolled account already told us — `claude auth status` returns nothing
-		// for a directory whose token has lapsed, and the column would lose its
-		// name for what is only a stale credential.
-		roots: scans.map((s) => ({ ...s.root, ...s.identity, email: s.identity.email ?? s.root.email ?? null })),
-		projects,
-	};
+	return { accounts, projects, indexRoot };
 }
 
 /**
- * Moves one session between two config directories.
+ * Moves a session to another account by moving its index entry.
  *
- * Refuses anything that would lose data: a different project, a name already
- * taken at the destination, or a source that is no longer there.
+ * The transcript is shared and stays exactly where it is; only the record of
+ * which account may see it changes.
  */
-export async function moveSession({ fromDir, toDir, projectKey, sessionId }) {
-	if (fromDir === toDir) throw new Error('source and destination are the same account');
+export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
+	if (!(await exists(fromFile))) throw new Error('this session is no longer where it was — rescan and try again');
+	if (!(await exists(toAccountPath))) throw new Error('the destination account has no session store yet');
 
-	const source = join(fromDir, 'projects', projectKey, `${sessionId}.jsonl`);
-	if (!(await exists(source))) throw new Error('this session is no longer where it was — rescan and try again');
+	const target = join(toAccountPath, basename(fromFile));
+	if (await exists(target)) throw new Error('the destination account already lists this session');
 
-	const targetDir = join(toDir, 'projects', projectKey);
-	const target = join(targetDir, `${sessionId}.jsonl`);
-	if (await exists(target)) throw new Error('the destination account already has a session with this id');
-
-	await mkdir(targetDir, { recursive: true });
-	await moveAcrossDevices(source, target);
-
-	// The session's environment directory belongs with it; a session split
-	// across two accounts would be worse than one that never moved.
-	const envSource = join(fromDir, 'session-env', sessionId);
-	if (await exists(envSource)) {
-		const envTarget = join(toDir, 'session-env', sessionId);
-		if (!(await exists(envTarget))) {
-			await mkdir(join(toDir, 'session-env'), { recursive: true });
-			await rename(envSource, envTarget).catch(() => {});
-		}
+	// The same transcript listed twice under one account would show as two
+	// sessions that are really one.
+	for (const file of (await readdir(toAccountPath)).filter((f) => f.endsWith('.json'))) {
+		const entry = await readEntry(join(toAccountPath, file));
+		if (entry?.cliSessionId === cliSessionId) throw new Error('the destination account already lists this session');
 	}
 
-	return { moved: sessionId, to: toDir };
-}
-
-/** rename() fails across filesystems; fall back to copy-then-delete. */
-async function moveAcrossDevices(source, target) {
+	await mkdir(toAccountPath, { recursive: true });
 	try {
-		await rename(source, target);
+		await rename(fromFile, target);
 	} catch (err) {
+		// rename() cannot cross filesystems.
 		if (err.code !== 'EXDEV') throw err;
-		await copyFile(source, target);
-		await rm(source, { force: true });
+		await copyFile(fromFile, target);
+		await rm(fromFile, { force: true });
 	}
+
+	return { moved: cliSessionId, to: toAccountPath };
 }

@@ -1,9 +1,14 @@
 /**
  * Utils tab — moving Claude Code sessions between accounts.
  *
- * Laid out as one row per project folder, with a column per account. That
- * shape is the rule made visible: a session belongs to the directory it ran
- * in, so it can only be dropped into a sibling column of its own row.
+ * One row per project folder, one column per account. That shape is the rule
+ * made visible: a session belongs to the directory it ran in, so it only ever
+ * moves sideways within its own row.
+ *
+ * The columns are accounts as the desktop app knows them — an account/org pair
+ * in its session index — not config directories. Several directories can be
+ * signed in as the same account, and showing those separately would offer moves
+ * that change nothing.
  */
 
 import { escapeHtml, relativeTime } from './render.js';
@@ -15,65 +20,61 @@ const projectsBox = $('#projects');
 const emptyBox = $('#sessions-empty');
 const statusLabel = $('#sessions-status');
 
-let view = { roots: [], projects: [] };
+let view = { accounts: [], projects: [] };
 let dragging = null;
 
-const formatSize = (bytes) => (bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const formatSize = (bytes) =>
+	bytes == null ? null : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function setStatus(message, tone = 'muted') {
 	statusLabel.textContent = message ?? '';
 	statusLabel.className = tone;
 }
 
+const accountName = (account) => account.email ?? `account ${account.accountUuid.slice(0, 8)}`;
+
 /* ------------------------------------------------------------------ render */
 
-function rootLabel(root) {
-	// `email` from the enrolled account is the reliable one; the live probe is a
-	// fallback for folders the app does not otherwise know about.
-	const who = root.email ?? (root.loggedIn ? 'signed in' : 'not signed in');
-	return [root.label, who, root.expired ? 'expired' : null].filter(Boolean).join(' · ');
-}
+function sessionCard(session, accountId, cwd) {
+	const meta = [
+		session.lastAt ? relativeTime(session.lastAt) : null,
+		formatSize(session.sizeBytes),
+		session.branch,
+		session.archived ? 'archived' : null,
+		// A listed session whose transcript is gone will open empty; better to
+		// say so than to let it look ordinary.
+		session.transcript ? null : 'transcript missing',
+	]
+		.filter(Boolean)
+		.join(' · ');
 
-function sessionCard(session, rootId, projectKey) {
-	const title = session.title ?? '(untitled session)';
 	return `
     <li class="session" draggable="true"
-        data-session="${escapeHtml(session.id)}"
-        data-root="${escapeHtml(rootId)}"
-        data-project="${escapeHtml(projectKey)}">
-      <span class="s-title">${escapeHtml(title)}</span>
-      <span class="s-meta">
-        ${escapeHtml(relativeTime(session.lastAt))} · ${escapeHtml(formatSize(session.sizeBytes))}
-        ${session.branch ? ` · ${escapeHtml(session.branch)}` : ''}
-      </span>
+        data-file="${escapeHtml(session.file)}"
+        data-cli="${escapeHtml(session.cliSessionId)}"
+        data-account="${escapeHtml(accountId)}"
+        data-cwd="${escapeHtml(cwd)}">
+      <span class="s-title">${escapeHtml(session.title ?? '(untitled session)')}</span>
+      <span class="s-meta">${escapeHtml(meta)}</span>
     </li>`;
 }
 
 function projectRow(project) {
-	const columns = view.roots
-		.map((root) => {
-			const sessions = project.byRoot[root.id] ?? [];
-			// You drag between accounts, not between folders, so the account is
-			// what the column is named after, with the folder beneath it as the
-			// distinguisher — the same address can be signed in from two
-			// directories, and the path is the only part that cannot be stale.
-			//
-			// The plan is deliberately absent: it comes from stored credentials
-			// and keeps its value long after they expire, so it would assert a
-			// subscription the account may no longer be on.
-			const who = root.email ?? (root.loggedIn ? 'signed in' : 'not signed in');
+	const columns = view.accounts
+		.map((account) => {
+			const sessions = project.byAccount[account.id] ?? [];
 			return `
-        <div class="col" data-root="${escapeHtml(root.id)}" data-project="${escapeHtml(project.key)}">
+        <div class="col" data-account="${escapeHtml(account.id)}" data-cwd="${escapeHtml(project.cwd)}">
           <div class="col-head">
             <span class="col-who">
-              <b class="${root.email ? '' : 'unknown'}">${escapeHtml(who)}</b>
-              <span class="col-path" title="${escapeHtml(root.path ?? '')}">${escapeHtml(root.label)}</span>
-              ${root.expired ? '<span class="col-stale">credential expired — sign in again</span>' : ''}
+              <b class="${account.email ? '' : 'unknown'}">${escapeHtml(accountName(account))}</b>
+              <span class="col-path" title="${escapeHtml(account.path)}">${escapeHtml(account.orgName ?? account.orgUuid)}</span>
+              ${account.expired ? '<span class="col-stale">credential expired — sign in again</span>' : ''}
             </span>
             <span class="col-count">${sessions.length || ''}</span>
           </div>
           <ul class="sessions">
-            ${sessions.map((s) => sessionCard(s, root.id, project.key)).join('') || '<li class="drop-hint">drop here</li>'}
+            ${sessions.map((s) => sessionCard(s, account.id, project.cwd)).join('') || '<li class="drop-hint">drop here</li>'}
           </ul>
         </div>`;
 		})
@@ -87,28 +88,14 @@ function projectRow(project) {
 }
 
 export function paintSessions() {
-	rootsBox.innerHTML = view.roots
+	rootsBox.innerHTML = view.accounts
 		.map(
-			(root) => `
-        <span class="root-chip ${root.loggedIn ? '' : 'stale'}">
-          ${escapeHtml(rootLabel(root))}
-          ${
-						// Only hand-picked folders can be forgotten here; the others follow
-						// from an enrolled account, which is removed in the Usage tab.
-						root.kind === 'manual'
-							? `<button class="root-remove" data-id="${escapeHtml(root.id)}" title="Stop listing this folder">×</button>`
-							: ''
-					}
+			(account) => `
+        <span class="root-chip ${account.expired ? 'stale' : ''}">
+          ${escapeHtml(accountName(account))} · ${escapeHtml(String(account.sessions))} sessions
         </span>`,
 		)
 		.join('');
-
-	for (const btn of rootsBox.querySelectorAll('.root-remove')) {
-		btn.addEventListener('click', async () => {
-			await window.aidash.sessions.removeRoot(btn.dataset.id);
-			await rescan();
-		});
-	}
 
 	const hasSessions = view.projects.length > 0;
 	emptyBox.hidden = hasSessions;
@@ -123,30 +110,30 @@ export function paintSessions() {
 function wireDragAndDrop() {
 	for (const card of projectsBox.querySelectorAll('.session')) {
 		card.addEventListener('dragstart', (e) => {
-			dragging = { sessionId: card.dataset.session, fromRoot: card.dataset.root, projectKey: card.dataset.project };
+			dragging = {
+				file: card.dataset.file,
+				cliSessionId: card.dataset.cli,
+				fromAccount: card.dataset.account,
+				cwd: card.dataset.cwd,
+			};
 			card.classList.add('dragging');
 			e.dataTransfer.effectAllowed = 'move';
 			// Firefox refuses to start a drag without payload; the real state is
 			// held above, since dataTransfer is unreadable during dragover.
-			e.dataTransfer.setData('text/plain', card.dataset.session);
+			e.dataTransfer.setData('text/plain', card.dataset.cli);
 		});
 		card.addEventListener('dragend', () => {
 			card.classList.remove('dragging');
 			dragging = null;
-			for (const col of projectsBox.querySelectorAll('.col')) col.classList.remove('over', 'refused');
+			for (const col of projectsBox.querySelectorAll('.col')) col.classList.remove('over');
 		});
 	}
 
 	for (const col of projectsBox.querySelectorAll('.col')) {
-		const acceptable = () =>
-			dragging && dragging.projectKey === col.dataset.project && dragging.fromRoot !== col.dataset.root;
+		const acceptable = () => dragging && dragging.cwd === col.dataset.cwd && dragging.fromAccount !== col.dataset.account;
 
 		col.addEventListener('dragover', (e) => {
-			if (!dragging) return;
-			// Rows are independent: a column from another project must visibly
-			// refuse rather than silently ignore the drop.
-			if (dragging.projectKey !== col.dataset.project) return;
-			if (dragging.fromRoot === col.dataset.root) return;
+			if (!acceptable()) return;
 			e.preventDefault();
 			e.dataTransfer.dropEffect = 'move';
 			col.classList.add('over');
@@ -160,10 +147,9 @@ function wireDragAndDrop() {
 			if (!acceptable()) return;
 
 			const request = {
-				fromDir: view.roots.find((r) => r.id === dragging.fromRoot)?.path,
-				toDir: view.roots.find((r) => r.id === col.dataset.root)?.path,
-				projectKey: dragging.projectKey,
-				sessionId: dragging.sessionId,
+				fromFile: dragging.file,
+				cliSessionId: dragging.cliSessionId,
+				toAccountPath: view.accounts.find((a) => a.id === col.dataset.account)?.path,
 			};
 			dragging = null;
 
@@ -171,8 +157,7 @@ function wireDragAndDrop() {
 			try {
 				view = await window.aidash.sessions.move(request);
 				paintSessions();
-				setStatus('moved', 'ok-text');
-				setTimeout(() => setStatus(''), 2500);
+				setStatus('moved — restart Claude Code to see it there', 'ok-text');
 			} catch (err) {
 				setStatus(String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, ''), 'error');
 			}
@@ -187,8 +172,10 @@ export async function rescan() {
 	try {
 		view = await window.aidash.sessions.scan();
 		paintSessions();
-		const total = view.projects.reduce((n, p) => n + Object.values(p.byRoot).reduce((m, s) => m + s.length, 0), 0);
-		setStatus(`${total} session${total === 1 ? '' : 's'} across ${view.projects.length} project${view.projects.length === 1 ? '' : 's'}`);
+		const total = view.accounts.reduce((n, a) => n + a.sessions, 0);
+		setStatus(
+			`${total} session${total === 1 ? '' : 's'} across ${view.projects.length} project${view.projects.length === 1 ? '' : 's'}`,
+		);
 	} catch (err) {
 		setStatus(String(err?.message ?? err), 'error');
 	}

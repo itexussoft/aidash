@@ -140,11 +140,15 @@ ipcMain.handle('accounts:cancelAdd', () => {
 
 /* ------------------------------------------------- Claude Code sessions */
 
-ipcMain.handle('sessions:scan', () => scanAll(store.effectiveSessionRoots()));
+// Config directories are passed only so the index's account UUIDs can be
+// given readable names; the sessions themselves come from the desktop index.
+const configDirs = () => store.effectiveSessionRoots().map((r) => r.path);
+
+ipcMain.handle('sessions:scan', () => scanAll(configDirs()));
 
 ipcMain.handle('sessions:move', async (_event, request) => {
 	await moveSession(request);
-	return scanAll(store.effectiveSessionRoots());
+	return scanAll(configDirs());
 });
 
 ipcMain.handle('sessions:addRoot', async () => {
