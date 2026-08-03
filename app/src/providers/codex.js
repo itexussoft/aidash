@@ -12,19 +12,11 @@
  * an ordinary machine.
  */
 
-import { spawn, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-
-const CANDIDATE_PATHS = ['/Applications/ChatGPT.app/Contents/Resources/codex'];
+import { spawn } from 'node:child_process';
+import { locate, spawnOptionsFor } from '../locate.js';
 
 export function findBinary() {
-	const candidates = [...CANDIDATE_PATHS];
-	try {
-		candidates.push(execFileSync('which', ['codex'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
-	} catch {
-		/* not on PATH */
-	}
-	return candidates.find((p) => p && existsSync(p)) ?? null;
+	return locate('codex');
 }
 
 /**
@@ -38,6 +30,7 @@ async function withSession(configDir, body) {
 	const proc = spawn(binary, ['app-server'], {
 		env: { ...process.env, CODEX_HOME: configDir },
 		stdio: ['pipe', 'pipe', 'ignore'],
+		...spawnOptionsFor(binary),
 	});
 
 	const pending = new Map();

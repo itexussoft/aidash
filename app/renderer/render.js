@@ -51,13 +51,17 @@ function meter(label, percent, resetAt, note, severityOverride) {
 	// the true number while capping the bar.
 	const shown = raw > 100 ? `${Math.round(raw)}%` : `${pct.toFixed(0)}%`;
 	const resetMs = toEpochMs(resetAt);
+	// The width is carried as data and applied by applyBarWidths() below. An
+	// inline style attribute would be dropped by the page's `style-src 'self'`
+	// policy, leaving the fill at its default auto width — which reads as a
+	// permanently full bar rather than as a broken one.
 	return `
     <div class="meter ${severityOverride ?? severity(raw)}">
       <div class="meter-head">
         <span class="meter-label">${escapeHtml(label)}</span>
         <span class="meter-val">${shown}</span>
       </div>
-      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="bar"><i data-pct="${pct.toFixed(2)}"></i></div>
       <div class="meter-foot">
         ${resetMs ? `resets ${escapeHtml(relativeTime(resetMs))}` : ''}
         ${note ? `<span class="note">${escapeHtml(note)}</span>` : ''}
@@ -241,6 +245,19 @@ export function renderCard(account) {
       </span>
     </footer>
   </article>`;
+}
+
+/**
+ * Applies the widths the markup carries as data.
+ *
+ * Setting `.style` from script is not what `style-src` restricts — only inline
+ * style attributes and <style> blocks are — so the policy stays strict.
+ * Call after inserting any markup containing meters.
+ */
+export function applyBarWidths(root = document) {
+	for (const fill of root.querySelectorAll('.bar i[data-pct]')) {
+		fill.style.width = `${fill.dataset.pct}%`;
+	}
 }
 
 /** "3 min ago", plus wall-clock so a glance separates stale from broken. */

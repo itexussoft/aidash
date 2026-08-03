@@ -39,8 +39,9 @@ export function renderLanding({ version, downloadUrl, repoUrl }) {
 
   header.nav{border-bottom:1px solid var(--line)}
   header.nav .wrap{display:flex; align-items:center; gap:16px; height:68px}
-  .brand{font-weight:700; font-size:18px; letter-spacing:-.01em}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; letter-spacing:-.01em}
   .brand span{color:var(--accent)}
+  .mark{display:block; width:30px; height:30px; border-radius:8px; flex:none}
   .nav-spacer{flex:1}
   .nav a{color:var(--muted); text-decoration:none; font-size:14px; font-weight:500}
   .nav a:hover{color:var(--ink)}
@@ -112,7 +113,22 @@ export function renderLanding({ version, downloadUrl, repoUrl }) {
 
 <header class="nav">
   <div class="wrap">
-    <div class="brand">ai<span>dash</span></div>
+    <div class="brand">
+      <!-- The application icon, drawn inline so the header needs no request.
+           Same three meters, same fills, same accent. -->
+      <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="24" fill="${INK}"/>
+        <g>
+          <rect x="20" y="26" width="60" height="12" rx="6" fill="#2D3944"/>
+          <rect x="20" y="26" width="31" height="12" rx="6" fill="#fff"/>
+          <rect x="20" y="44" width="60" height="12" rx="6" fill="#2D3944"/>
+          <rect x="20" y="44" width="53" height="12" rx="6" fill="${ACCENT}"/>
+          <rect x="20" y="62" width="60" height="12" rx="6" fill="#2D3944"/>
+          <rect x="20" y="62" width="18" height="12" rx="6" fill="#8E959B"/>
+        </g>
+      </svg>
+      ai<span>dash</span>
+    </div>
     <div class="nav-spacer"></div>
     <a href="#what">What it does</a>
     <a href="#privacy">Privacy</a>

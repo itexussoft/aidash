@@ -33,6 +33,9 @@ function createWindow() {
 		minWidth: 480,
 		titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
 		backgroundColor: '#151513',
+		// macOS takes the icon from the bundle; the others need it passed here,
+		// including when running unpackaged from source.
+		...(process.platform === 'darwin' ? {} : { icon: join(here, '..', 'build', 'icon.png') }),
 		webPreferences: {
 			preload: join(here, 'preload.cjs'),
 			contextIsolation: true,
@@ -132,11 +135,11 @@ ipcMain.handle('accounts:cancelAdd', () => {
 
 /* ------------------------------------------------- Claude Code sessions */
 
-ipcMain.handle('sessions:scan', () => scanAll(store.state.sessionRoots));
+ipcMain.handle('sessions:scan', () => scanAll(store.effectiveSessionRoots()));
 
 ipcMain.handle('sessions:move', async (_event, request) => {
 	await moveSession(request);
-	return scanAll(store.state.sessionRoots);
+	return scanAll(store.effectiveSessionRoots());
 });
 
 ipcMain.handle('sessions:addRoot', async () => {
@@ -145,7 +148,7 @@ ipcMain.handle('sessions:addRoot', async () => {
 		message: 'Pick the folder a Claude Code account uses (the one holding "projects")',
 		properties: ['openDirectory'],
 	});
-	if (canceled || !filePaths[0]) return store.state.sessionRoots;
+	if (canceled || !filePaths[0]) return store.effectiveSessionRoots();
 	return store.addSessionRoot(filePaths[0]);
 });
 

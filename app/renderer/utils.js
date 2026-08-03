@@ -28,6 +28,8 @@ function setStatus(message, tone = 'muted') {
 /* ------------------------------------------------------------------ render */
 
 function rootLabel(root) {
+	// `email` from the enrolled account is the reliable one; the live probe is a
+	// fallback for folders the app does not otherwise know about.
 	const who = root.email ?? (root.loggedIn ? 'signed in' : 'not signed in');
 	return `${root.label} · ${who}`;
 }
@@ -84,7 +86,13 @@ export function paintSessions() {
 			(root) => `
         <span class="root-chip ${root.loggedIn ? '' : 'stale'}">
           ${escapeHtml(rootLabel(root))}
-          ${root.id === 'default' ? '' : `<button class="root-remove" data-id="${escapeHtml(root.id)}" title="Stop listing this folder">×</button>`}
+          ${
+						// Only hand-picked folders can be forgotten here; the others follow
+						// from an enrolled account, which is removed in the Usage tab.
+						root.kind === 'manual'
+							? `<button class="root-remove" data-id="${escapeHtml(root.id)}" title="Stop listing this folder">×</button>`
+							: ''
+					}
         </span>`,
 		)
 		.join('');

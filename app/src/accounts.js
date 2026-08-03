@@ -39,32 +39,66 @@ export class AccountStore {
 			this.state = { accounts: [], lastRefreshAt: null, sessionRoots: null };
 		}
 
-		// The default Claude Code directory is always present; anything else the
-		// user works under has to be pointed at explicitly, since there is no way
-		// to discover a custom CLAUDE_CONFIG_DIR from the outside.
-		if (!this.state.sessionRoots) {
-			this.state.sessionRoots = [{ id: 'default', path: DEFAULT_ROOT, label: '~/.claude' }];
-		}
+		// Holds only folders the user pointed at by hand; the interesting ones are
+		// derived in effectiveSessionRoots().
+		if (!this.state.sessionRoots) this.state.sessionRoots = [];
 
 		await mkdir(this.accountsDir, { recursive: true });
 		return this.state;
 	}
 
-	async addSessionRoot(path, label) {
-		if (this.state.sessionRoots.some((r) => r.path === path)) throw new Error('that folder is already listed');
+	/**
+	 * Every Claude Code config directory worth showing in Utils.
+	 *
+	 * Enrolled Claude accounts already own one, which is the whole point of the
+	 * tab: without listing them there is only ever a single column and nothing
+	 * to drag between. The default directory comes first because it is where
+	 * work normally happens, and manually added folders cover accounts the app
+	 * does not track for usage.
+	 */
+	effectiveSessionRoots() {
+		const roots = [{ id: 'default', path: DEFAULT_ROOT, label: '~/.claude', kind: 'default' }];
 
-		const id = `root-${this.state.sessionRoots.length + 1}-${Date.now().toString(36)}`;
+		for (const account of this.state.accounts) {
+			if (account.provider !== 'claude') continue;
+			roots.push({
+				id: `account:${account.id}`,
+				path: this.dirFor(account.id),
+				label: account.label,
+				email: account.email ?? null,
+				kind: 'account',
+			});
+		}
+
+		for (const extra of this.state.sessionRoots) roots.push({ ...extra, kind: 'manual' });
+
+		// A folder can arrive twice — most easily by being picked by hand before
+		// the account that owns it was enrolled. Two columns over one directory
+		// would offer a move that is really a no-op, so the derived entry wins.
+		const seen = new Set();
+		return roots.filter((root) => {
+			if (seen.has(root.path)) return false;
+			seen.add(root.path);
+			return true;
+		});
+	}
+
+	async addSessionRoot(path, label) {
+		if (this.effectiveSessionRoots().some((r) => r.path === path)) throw new Error('that folder is already listed');
+
+		const id = `manual-${Date.now().toString(36)}`;
 		this.state.sessionRoots.push({ id, path, label: label || path.replace(homedir(), '~') });
 		await this.save();
-		return this.state.sessionRoots;
+		return this.effectiveSessionRoots();
 	}
 
 	async removeSessionRoot(id) {
-		// Removing only forgets the folder; nothing on disk is touched.
-		if (id === 'default') throw new Error('the default folder cannot be removed');
+		// Only forgets the folder; nothing on disk is touched. Derived roots are
+		// not removable here — an account is removed from the Usage tab instead.
+		if (!id.startsWith('manual-')) throw new Error('this folder comes from an enrolled account and cannot be removed here');
 		this.state.sessionRoots = this.state.sessionRoots.filter((r) => r.id !== id);
 		await this.save();
-		return this.state.sessionRoots;
+		return this.effectiveSessionRoots();
 	}
 
 	async save() {

@@ -145,6 +145,26 @@ check('payload escaped in the identity line', !evil.includes('<script>alert(2)')
 check('payload escaped inside the raw block', !/<script>alert\(2\)<\/script>/.test(evil));
 check('error text escaped', card({ lastError: '<b>boom</b>' }).includes('&lt;b&gt;'));
 
+/* ---------------------------------------------------------------- meters */
+
+console.log('\nmeter fill widths');
+// The regression this guards: an inline style attribute is dropped by the
+// page's `style-src 'self'` policy, and .bar i has no width in CSS, so every
+// fill silently rendered as a full bar.
+check('fill carries its width as data, not as an inline style', /<i data-pct="[\d.]+"><\/i>/.test(codexCard));
+check('no inline style attributes anywhere in a card', !/\sstyle="/.test(codexCard));
+const pcts = [...claudeCard.matchAll(/data-pct="([\d.]+)"/g)].map((m) => Number(m[1]));
+check('widths match the reported percentages', JSON.stringify(pcts) === JSON.stringify([56, 46, 1]));
+
+const overCard = card({
+	provider: 'codex',
+	label: 'Over',
+	payload: { rate_limit: { primary_window: { used_percent: 887 } } },
+	lastOkAt: Date.now(),
+});
+check('a bar past 100% is capped for the fill', /data-pct="100/.test(overCard));
+check('but the true figure is still shown', overCard.includes('887%'));
+
 /* ----------------------------------------------------------- sessions tab */
 
 console.log('\nsession scanning and moving');

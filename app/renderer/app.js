@@ -5,7 +5,7 @@
  * no access to credentials, processes or the filesystem.
  */
 
-import { renderCard, refreshLabel, escapeHtml } from './render.js';
+import { renderCard, refreshLabel, escapeHtml, applyBarWidths } from './render.js';
 import { rescan as rescanSessions } from './utils.js';
 
 // Opening the window refreshes when the data is older than this. There is no
@@ -45,7 +45,29 @@ function paint() {
 	refreshedLabel.hidden = accounts.length === 0;
 	refreshedLabel.textContent = refreshLabel(lastRefreshAt);
 
-	grid.innerHTML = accounts.map(renderCard).join('');
+	// Grouped by provider: the two measure usage in different terms, so reading
+	// them as one list invites comparing numbers that are not comparable.
+	const order = ['codex', 'claude'];
+	const groups = order
+		.map((provider) => ({ provider, items: accounts.filter((a) => a.provider === provider) }))
+		.concat({ provider: 'other', items: accounts.filter((a) => !order.includes(a.provider)) })
+		.filter((g) => g.items.length > 0);
+
+	const names = { codex: 'Codex', claude: 'Claude', other: 'Other' };
+
+	grid.innerHTML = groups
+		.map(
+			(group) => `
+        <section class="provider-group">
+          <h2 class="group-head">
+            ${escapeHtml(names[group.provider] ?? group.provider)}
+            <span class="group-count">${group.items.length}</span>
+          </h2>
+          <div class="group-grid">${group.items.map(renderCard).join('')}</div>
+        </section>`,
+		)
+		.join('');
+	applyBarWidths(grid);
 
 	for (const btn of grid.querySelectorAll('button.remove')) {
 		btn.addEventListener('click', async () => {

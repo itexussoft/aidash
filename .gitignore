@@ -5,3 +5,6 @@ dist/
 
 # Wrangler keeps account identifiers here.
 worker/.wrangler/
+
+# Intermediate for iconutil; icon.icns is the artefact that matters.
+build/icon.iconset/

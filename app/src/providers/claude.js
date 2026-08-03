@@ -12,9 +12,10 @@
  * forces one; rotated tokens are written back so the CLI keeps working too.
  */
 
-import { spawn, execFile, execFileSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readClaudeCredentials, writeClaudeCredentials } from '../keychain.js';
+import { locate, spawnOptionsFor } from '../locate.js';
 
 const run = promisify(execFile);
 
@@ -26,16 +27,17 @@ const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 export function findBinary() {
-	try {
-		return execFileSync('which', ['claude'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
-	} catch {
-		return null;
-	}
+	return locate('claude');
 }
 
 export async function authStatus(configDir) {
 	try {
-		const { stdout } = await run('claude', ['auth', 'status'], { env: { ...process.env, CLAUDE_CONFIG_DIR: configDir } });
+		const binary = findBinary();
+		if (!binary) return { loggedIn: false };
+		const { stdout } = await run(binary, ['auth', 'status'], {
+			env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+			...spawnOptionsFor(binary),
+		});
 		return JSON.parse(stdout);
 	} catch {
 		return { loggedIn: false };
@@ -51,12 +53,14 @@ export const isAuthenticated = async (configDir) => Boolean((await authStatus(co
  * for the code the browser shows, and must resolve to that code.
  */
 export async function login(configDir, { onUrl, onNeedCode, signal } = {}) {
-	if (!findBinary()) throw new Error('Claude Code is not installed on this machine');
+	const binary = findBinary();
+	if (!binary) throw new Error('Claude Code is not installed on this machine');
 
 	await new Promise((resolve, reject) => {
-		const proc = spawn('claude', ['auth', 'login', '--claudeai'], {
+		const proc = spawn(binary, ['auth', 'login', '--claudeai'], {
 			env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
 			stdio: ['pipe', 'pipe', 'pipe'],
+			...spawnOptionsFor(binary),
 		});
 
 		let seen = '';

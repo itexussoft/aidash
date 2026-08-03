@@ -22,6 +22,7 @@ import { join, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
+import { locate, spawnOptionsFor } from './locate.js';
 
 const run = promisify(execFile);
 
@@ -100,7 +101,12 @@ async function readSessionMeta(file) {
 /** Identifies which account a config directory is signed in as. */
 export async function identifyRoot(dir) {
 	try {
-		const { stdout } = await run('claude', ['auth', 'status'], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
+		const binary = locate('claude');
+		if (!binary) return { email: null, plan: null, loggedIn: false };
+		const { stdout } = await run(binary, ['auth', 'status'], {
+			env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+			...spawnOptionsFor(binary),
+		});
 		const status = JSON.parse(stdout);
 		return { email: status.email ?? null, plan: status.subscriptionType ?? null, loggedIn: Boolean(status.loggedIn) };
 	} catch {
@@ -173,7 +179,11 @@ export async function scanAll(roots) {
 	const projects = [...byProject.values()].sort((a, b) => a.cwd.localeCompare(b.cwd));
 
 	return {
-		roots: scans.map((s) => ({ ...s.root, ...s.identity })),
+		// The live probe wins when it answers, but must not blank an email the
+		// enrolled account already told us — `claude auth status` returns nothing
+		// for a directory whose token has lapsed, and the column would lose its
+		// name for what is only a stale credential.
+		roots: scans.map((s) => ({ ...s.root, ...s.identity, email: s.identity.email ?? s.root.email ?? null })),
 		projects,
 	};
 }
