@@ -168,6 +168,49 @@ const overCard = card({
 check('a bar past 100% is capped for the fill', /data-pct="100/.test(overCard));
 check('but the true figure is still shown', overCard.includes('887%'));
 
+/* -------------------------------------------------------------- the store */
+
+console.log('\naccount store');
+{
+	const { AccountStore } = await import('./src/accounts.js');
+	const { mkdtemp } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const { join } = await import('node:path');
+
+	// A bulk edit once removed save/dirFor/makeId while deleting the code around
+	// them; nothing caught it because the suite only covered rendering. This is
+	// the cheap guard: the class must still have the shape the app calls.
+	for (const method of ['load', 'save', 'dirFor', 'makeId', 'claudeConfigDirs', 'add', 'rename', 'remove', 'refreshAll', 'availability']) {
+		check(`store has ${method}()`, typeof AccountStore.prototype[method] === 'function');
+	}
+
+	const store = new AccountStore(await mkdtemp(join(tmpdir(), 'aidash-store-')));
+	await store.load();
+	check('starts with no accounts', store.state.accounts.length === 0);
+	check('the default config directory is always consulted', store.claudeConfigDirs().length === 1);
+
+	check('ids keep non-Latin names distinct', store.makeId('claude', 'Работа') !== store.makeId('claude', 'Личный'));
+	store.state.accounts.push({ id: 'claude-работа', provider: 'claude' });
+	check('a taken id gets a suffix rather than colliding', store.makeId('claude', 'Работа') === 'claude-работа-2');
+	check('credentials live under the account id', store.dirFor('x').endsWith(join('accounts', 'x')));
+
+	await store.save();
+	const reloaded = new AccountStore(store.file.replace(/\/accounts\.json$/, ''));
+	await reloaded.load();
+	check('state survives a reload', reloaded.state.accounts.length === 1);
+
+	await reloaded.rename('claude-работа', 'Renamed');
+	check('rename changes the label', reloaded.state.accounts[0].label === 'Renamed');
+	check('rename leaves the id alone', reloaded.state.accounts[0].id === 'claude-работа');
+	let renameError = null;
+	try {
+		await reloaded.rename('claude-работа', '   ');
+	} catch (err) {
+		renameError = err.message;
+	}
+	check('an empty name is refused', /name is required/.test(renameError ?? ''));
+}
+
 /* ----------------------------------------------------------- sessions tab */
 
 console.log('\nsession index');

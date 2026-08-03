@@ -38,6 +38,41 @@ export class AccountStore {
 		return this.state;
 	}
 
+	async save() {
+		await mkdir(this.accountsDir, { recursive: true });
+		await writeFile(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+	}
+
+	/** Where an account's vendor client keeps its credentials. */
+	dirFor(id) {
+		return join(this.accountsDir, id);
+	}
+
+	/**
+	 * Slug for a new account.
+	 *
+	 * Keeps letters from any script rather than only ASCII: stripping non-Latin
+	 * text would collapse names like "Работа" and "Личный" to the same empty
+	 * slug, silently pointing two accounts at one credential directory.
+	 */
+	makeId(provider, label) {
+		const base =
+			`${provider}-${label}`
+				.toLowerCase()
+				.replace(/[^\p{L}\p{N}\s-]/gu, '')
+				.trim()
+				.replace(/[\s_]+/g, '-')
+				.replace(/-+/g, '-')
+				.replace(/^-|-$/g, '')
+				.slice(0, 40) || provider;
+
+		if (!this.state.accounts.some((a) => a.id === base)) return base;
+		for (let n = 2; ; n++) {
+			const candidate = `${base}-${n}`;
+			if (!this.state.accounts.some((a) => a.id === candidate)) return candidate;
+		}
+	}
+
 	/**
 	 * Claude Code config directories the app can read an identity from.
 	 *
