@@ -24,6 +24,7 @@ import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { locate, spawnOptionsFor } from './locate.js';
 import { DEFAULT_CONFIG_DIR, claudeEnv } from './claude-config.js';
+import { readClaudeCredentials } from './keychain.js';
 
 const run = promisify(execFile);
 
@@ -99,19 +100,38 @@ async function readSessionMeta(file) {
 	};
 }
 
-/** Identifies which account a config directory is signed in as. */
+/**
+ * Identifies which account a config directory is signed in as.
+ *
+ * `claude auth status` answers from stored credentials rather than from the
+ * server, and reports `loggedIn: true` even once they have expired — so both
+ * the plan and the address it gives can be months out of date. The expiry is
+ * read alongside them so a column can say which of those it is, instead of
+ * quietly presenting stale metadata as current.
+ */
 export async function identifyRoot(dir) {
+	const credential = await readClaudeCredentials(dir).catch(() => null);
+	const expiresAt = credential?.expiresAt ?? null;
+	const expired = expiresAt != null && expiresAt < Date.now();
+
 	try {
 		const binary = locate('claude');
-		if (!binary) return { email: null, plan: null, loggedIn: false };
+		if (!binary) return { email: null, plan: null, loggedIn: false, expiresAt, expired };
 		const { stdout } = await run(binary, ['auth', 'status'], {
 			env: { ...process.env, ...claudeEnv(dir) },
 			...spawnOptionsFor(binary),
 		});
 		const status = JSON.parse(stdout);
-		return { email: status.email ?? null, plan: status.subscriptionType ?? null, loggedIn: Boolean(status.loggedIn) };
+		return {
+			email: status.email ?? null,
+			// Stored, not live. Displayed only where it can be trusted.
+			plan: status.subscriptionType ?? null,
+			loggedIn: Boolean(status.loggedIn),
+			expiresAt,
+			expired,
+		};
 	} catch {
-		return { email: null, plan: null, loggedIn: false };
+		return { email: null, plan: null, loggedIn: false, expiresAt, expired };
 	}
 }
 

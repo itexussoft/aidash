@@ -244,6 +244,15 @@ console.log('\nsession scanning and moving');
 	check('default keychain entry is unsuffixed', keychainService(DEFAULT_CONFIG_DIR) === 'Claude Code-credentials');
 	check('other directories get a hashed suffix', /^Claude Code-credentials-[0-9a-f]{8}$/.test(keychainService('/tmp/other')));
 	check('the suffix distinguishes directories', keychainService('/tmp/a') !== keychainService('/tmp/b'));
+
+	// `claude auth status` answers from stored credentials and keeps reporting
+	// loggedIn once they expire, so the plan it returns can be months old. The
+	// expiry has to travel with it or a column would present stale metadata as
+	// current — which is how one account on one plan looked like two.
+	const { identifyRoot } = await import('./src/sessions.js');
+	const identity = await identifyRoot(A);
+	check('identity reports expiry alongside the plan', 'expired' in identity && 'expiresAt' in identity);
+	check('a directory with no credential is not called expired', identity.expired === false);
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');

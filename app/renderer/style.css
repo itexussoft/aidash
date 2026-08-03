@@ -557,6 +557,11 @@ code {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.col-stale {
+	font-size: 0.63rem;
+	color: var(--warn);
+	margin-top: 0.15rem;
+}
 .col-count {
 	font-variant-numeric: tabular-nums;
 	flex-shrink: 0;
