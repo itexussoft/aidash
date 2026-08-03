@@ -6,7 +6,7 @@
   "description": "Desktop dashboard showing quota usage across your Codex and Claude accounts",
   "repository": {
     "type": "git",
-    "url": "git@gitlab.itexus.com:tools/aidash.git"
+    "url": "git@github.com:itexussoft/aidash.git"
   },
   "main": "app/main.js",
   "scripts": {

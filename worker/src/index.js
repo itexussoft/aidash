@@ -11,19 +11,18 @@ import { renderLanding } from './landing.js';
 // Bumped together with the app's version in package.json when a build is
 // published. Kept here rather than in a database because it changes exactly as
 // often as this Worker is deployed.
-const PROJECT = 1189;
-const HOST = 'https://gitlab.itexus.com';
-const REPO = `${HOST}/tools/aidash`;
+const REPO = 'https://github.com/itexussoft/aidash';
 
-/** Direct, public URLs into the generic package registry. */
-const asset = (version, file) => `${HOST}/api/v4/projects/${PROJECT}/packages/generic/aidash/${version}/${file}`;
+/** Release assets are served straight from the GitHub release. */
+const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`;
 
 /**
  * The published release.
  *
- * Bumped together with package.json by `npm run release`, which uploads the
- * artefacts under exactly these names. A platform absent from `downloads` is
- * shown on the landing as not yet built rather than linked to a 404.
+ * Bumped by `npm run release`, which tags and pushes; GitHub Actions builds
+ * every platform and attaches the files under exactly these names. A platform
+ * missing from `downloads` is shown on the landing as not yet built rather than
+ * linked to a 404.
  */
 const RELEASE = {
 	version: '0.1.0',
@@ -33,6 +32,7 @@ const RELEASE = {
 	downloads: {
 		'darwin-arm64': asset('0.1.0', 'aidash-0.1.0-arm64.dmg'),
 		'darwin-x64': asset('0.1.0', 'aidash-0.1.0.dmg'),
+		'win32-x64': asset('0.1.0', 'aidash Setup 0.1.0.exe'),
 	},
 };
 

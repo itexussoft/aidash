@@ -33,7 +33,7 @@ closest to stopping you sorts to the top.
 Refreshes when you open the window if the data is older than ten minutes, and
 when you press the button. Nothing runs in the background.
 
-**Utils** — Claude Code keeps its transcripts under
+**Local Sessions** — Claude Code keeps its transcripts under
 `<config dir>/projects/<encoded cwd>/`, so two accounts used alternately on one
 machine end up with the same project's history split between them. This tab
 groups every session by project folder with one column per account, and drag and
@@ -88,9 +88,17 @@ first launch. `app/src/updates.js` already speaks the shape electron-updater
 expects, so switching over is a change in that one file once a certificate
 exists.
 
-To publish a release: bump `version` in `package.json`, build with
-`npm run dist`, attach the artefacts to a GitLab release, then bump `RELEASE` in
-`worker/src/index.js` and `npm run site:deploy`.
+To publish a release:
+
+```bash
+npm run release -- 0.2.0
+```
+
+That bumps `package.json` and the manifest in `worker/src/index.js`, commits,
+tags and pushes. GitHub Actions builds macOS (Apple Silicon and Intel) and
+Windows and attaches them to the release — Windows is why the build lives there
+rather than on a laptop, since packaging NSIS from macOS needs Wine. Then
+`npm run site:deploy` points the landing page and the update manifest at it.
 
 ## Layout
 
