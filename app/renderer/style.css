@@ -30,6 +30,16 @@
 	box-sizing: border-box;
 }
 
+/*
+ * The `hidden` attribute is only a UA rule, so any author `display` beats it —
+ * which is how a hidden banner stayed on screen, empty, with dead buttons.
+ * Making it explicit means adding a display rule can never resurrect an element
+ * that is supposed to be gone.
+ */
+[hidden] {
+	display: none !important;
+}
+
 body {
 	margin: 0;
 	padding: 0 1.25rem 2rem;
@@ -130,12 +140,27 @@ button.primary:hover:not(:disabled) {
 	letter-spacing: 0.08em;
 	color: var(--muted);
 	margin: 0;
+	cursor: pointer;
+	user-select: none;
+}
+.group-head:hover {
+	color: var(--fg);
 }
 .group-head::after {
 	content: '';
 	flex: 1;
 	height: 1px;
 	background: var(--line);
+}
+.group-caret {
+	display: inline-block;
+	width: 0.6rem;
+	transition: transform 0.15s;
+	font-size: 0.6rem;
+	letter-spacing: 0;
+}
+.provider-group.collapsed .group-caret {
+	transform: rotate(-90deg);
 }
 .group-count {
 	font-variant-numeric: tabular-nums;

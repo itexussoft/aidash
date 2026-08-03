@@ -29,13 +29,39 @@ async function withSession(configDir, body) {
 
 	const proc = spawn(binary, ['app-server'], {
 		env: { ...process.env, CODEX_HOME: configDir },
-		stdio: ['pipe', 'pipe', 'ignore'],
+		// stderr is captured rather than discarded: a launcher that cannot start
+		// says why there and nowhere else, and discarding it turned an instant,
+		// explainable failure into a silent thirty-second timeout.
+		stdio: ['pipe', 'pipe', 'pipe'],
 		...spawnOptionsFor(binary),
 	});
 
 	const pending = new Map();
 	const listeners = new Set();
 	let buffer = '';
+	let stderr = '';
+	let exited = null;
+
+	proc.stderr?.on('data', (chunk) => {
+		stderr += chunk;
+	});
+
+	// A process that dies takes every outstanding call with it, immediately,
+	// rather than leaving them to time out one by one.
+	proc.on('exit', (code) => {
+		exited = code;
+		const reason = stderr.trim().split('\n')[0] || `exited with code ${code}`;
+		for (const [id, settle] of pending) {
+			settle({ id, error: { message: `Codex could not start: ${reason}` } });
+		}
+		pending.clear();
+	});
+
+	proc.on('error', (err) => {
+		exited = -1;
+		for (const [id, settle] of pending) settle({ id, error: { message: `Codex could not start: ${err.message}` } });
+		pending.clear();
+	});
 
 	proc.stdout.on('data', (chunk) => {
 		buffer += chunk;
@@ -61,9 +87,16 @@ async function withSession(configDir, body) {
 	let nextId = 1;
 	const call = (method, params = {}, timeoutMs = 30000) =>
 		new Promise((resolve, reject) => {
+			if (exited !== null) return reject(new Error(`Codex is not running: ${stderr.trim().split('\n')[0] || 'it exited'}`));
+
 			const id = nextId++;
 			pending.set(id, (msg) => (msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)));
-			proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+			try {
+				proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+			} catch (err) {
+				pending.delete(id);
+				return reject(new Error(`Codex could not be reached: ${err.message}`));
+			}
 			setTimeout(() => pending.has(id) && (pending.delete(id), reject(new Error(`${method} timed out`))), timeoutMs);
 		});
 

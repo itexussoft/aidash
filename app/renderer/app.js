@@ -30,6 +30,24 @@ const cancelBtn = $('#add-cancel');
 const authUrlBtn = $('#auth-url');
 
 let state = { accounts: [], lastRefreshAt: null, availability: {} };
+
+// Which provider groups are folded away, remembered across restarts so the
+// window opens the way it was left.
+const COLLAPSED_KEY = 'aidash:collapsed-groups';
+const collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]'));
+
+function toggleGroup(section) {
+	const provider = section.dataset.provider;
+	const nowCollapsed = !collapsed.has(provider);
+
+	if (nowCollapsed) collapsed.add(provider);
+	else collapsed.delete(provider);
+	localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+
+	section.classList.toggle('collapsed', nowCollapsed);
+	section.querySelector('.group-grid').hidden = nowCollapsed;
+	section.querySelector('.group-head').setAttribute('aria-expanded', String(!nowCollapsed));
+}
 let chosenProvider = null;
 let addInFlight = null;
 
@@ -58,16 +76,28 @@ function paint() {
 	grid.innerHTML = groups
 		.map(
 			(group) => `
-        <section class="provider-group">
-          <h2 class="group-head">
+        <section class="provider-group ${collapsed.has(group.provider) ? 'collapsed' : ''}" data-provider="${escapeHtml(group.provider)}">
+          <h2 class="group-head" role="button" tabindex="0" aria-expanded="${!collapsed.has(group.provider)}">
+            <span class="group-caret">▼</span>
             ${escapeHtml(names[group.provider] ?? group.provider)}
             <span class="group-count">${group.items.length}</span>
           </h2>
-          <div class="group-grid">${group.items.map(renderCard).join('')}</div>
+          <div class="group-grid" ${collapsed.has(group.provider) ? 'hidden' : ''}>${group.items.map(renderCard).join('')}</div>
         </section>`,
 		)
 		.join('');
 	applyBarWidths(grid);
+
+	for (const head of grid.querySelectorAll('.group-head')) {
+		const toggle = () => toggleGroup(head.closest('.provider-group'));
+		head.addEventListener('click', toggle);
+		head.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				toggle();
+			}
+		});
+	}
 
 	for (const btn of grid.querySelectorAll('button.remove')) {
 		btn.addEventListener('click', async () => {
@@ -197,6 +227,11 @@ async function beginAdd() {
 
 	nextBtn.disabled = true;
 	showStep('browser');
+	// Until the provider hands back a URL there is nothing to show, and an empty
+	// field reads as breakage. Say what is happening instead.
+	$('.step[data-step="browser"] .status').textContent = 'Starting sign-in…';
+	authUrlBtn.textContent = '';
+	authUrlBtn.hidden = true;
 
 	addInFlight = window.aidash
 		.addAccount(chosenProvider, labelInput.value.trim())
@@ -214,6 +249,8 @@ async function beginAdd() {
 window.aidash.onLoginProgress((progress) => {
 	if (progress.stage === 'browser') {
 		showStep('browser');
+		$('.step[data-step="browser"] .status').textContent = 'Waiting for you to sign in…';
+		authUrlBtn.hidden = false;
 		authUrlBtn.textContent = progress.url;
 		authUrlBtn.onclick = () => window.aidash.openUrl(progress.url);
 	}
