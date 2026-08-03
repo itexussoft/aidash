@@ -541,6 +541,11 @@ code {
 		border-color 0.15s,
 		background 0.15s;
 }
+/* Transcripts no account lists — a source to drag from, not a destination. */
+.col.orphan {
+	border-style: dashed;
+	background: transparent;
+}
 .col.over {
 	border-color: var(--ok);
 	background: color-mix(in srgb, var(--ok) 8%, var(--card));

@@ -30,11 +30,12 @@
  * index entry at all: visible to the CLI, invisible to the desktop.
  */
 
-import { readdir, stat, rename, access, open, readFile, mkdir, copyFile, rm } from 'node:fs/promises';
+import { readdir, stat, rename, access, open, readFile, writeFile, mkdir, copyFile, rm } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { locate, spawnOptionsFor } from './locate.js';
 import { DEFAULT_CONFIG_DIR, claudeEnv } from './claude-config.js';
 import { readClaudeCredentials } from './keychain.js';
@@ -150,8 +151,8 @@ async function readEntry(file) {
 const encodeCwd = (cwd) => cwd.replace(/[/\\]/g, '-');
 
 /** Size and branch from the transcript, when it is still on disk. */
-async function transcriptFacts(cliSessionId, cwd) {
-	const file = join(TRANSCRIPTS, encodeCwd(cwd), `${cliSessionId}.jsonl`);
+async function transcriptFacts(cliSessionId, cwd, transcriptsRoot = TRANSCRIPTS) {
+	const file = join(transcriptsRoot, encodeCwd(cwd), `${cliSessionId}.jsonl`);
 	if (!(await exists(file))) return { transcript: null, sizeBytes: null, branch: null };
 
 	let branch = null;
@@ -183,13 +184,142 @@ async function transcriptFacts(cliSessionId, cwd) {
 	return { transcript: file, sizeBytes: stats?.size ?? null, branch };
 }
 
+/** The column standing for transcripts no account has claimed. */
+export const UNINDEXED = 'unindexed';
+
+/**
+ * Reads what an index entry needs from a transcript.
+ *
+ * Only the head is parsed — transcripts reach tens of megabytes, and the title,
+ * cwd, branch and model all appear near the top.
+ */
+async function describeTranscript(file) {
+	const stats = await stat(file).catch(() => null);
+	if (!stats) return null;
+
+	let title = null;
+	let cwd = null;
+	let branch = null;
+	let model = null;
+	let createdAt = null;
+
+	try {
+		const handle = await open(file, 'r');
+		try {
+			const buffer = Buffer.alloc(HEAD_BYTES);
+			const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
+			for (const line of buffer.subarray(0, bytesRead).toString('utf8').split('\n')) {
+				if (!line.trim()) continue;
+				let record;
+				try {
+					record = JSON.parse(line);
+				} catch {
+					// The final line of the slice is normally cut mid-record.
+					continue;
+				}
+				if (record.type === 'ai-title' && record.aiTitle) title = record.aiTitle;
+				cwd ??= record.cwd ?? null;
+				branch ??= record.gitBranch ?? null;
+				model ??= record.message?.model ?? null;
+				if (!createdAt && record.timestamp) createdAt = Date.parse(record.timestamp) || null;
+			}
+		} finally {
+			await handle.close();
+		}
+	} catch {
+		return null;
+	}
+
+	return {
+		cliSessionId: basename(file, '.jsonl'),
+		title,
+		cwd,
+		branch,
+		model,
+		createdAt: createdAt ?? stats.mtimeMs,
+		lastAt: stats.mtimeMs,
+		sizeBytes: stats.size,
+		transcript: file,
+	};
+}
+
+/**
+ * Transcripts with no index entry anywhere.
+ *
+ * These are resumable from the terminal and invisible to the desktop app,
+ * which lists only what its index names.
+ */
+async function listUnindexed(indexedIds, transcriptsRoot = TRANSCRIPTS) {
+	if (!(await exists(transcriptsRoot))) return [];
+
+	const found = [];
+	for (const dir of await readdir(transcriptsRoot, { withFileTypes: true })) {
+		if (!dir.isDirectory()) continue;
+		const path = join(transcriptsRoot, dir.name);
+		for (const file of await readdir(path)) {
+			if (!file.endsWith('.jsonl')) continue;
+			if (indexedIds.has(basename(file, '.jsonl'))) continue;
+			const described = await describeTranscript(join(path, file));
+			if (described?.cwd) found.push(described);
+		}
+	}
+	return found;
+}
+
+/**
+ * Gives a transcript to an account by writing the index entry it lacks.
+ *
+ * The transcript is untouched; this only creates the record that makes the
+ * desktop app willing to list it.
+ */
+export async function adoptSession({ transcriptFile, toAccountPath }) {
+	if (!(await exists(transcriptFile))) throw new Error('that transcript is no longer there — rescan and try again');
+	if (!(await exists(toAccountPath))) throw new Error('the destination account has no session store yet');
+
+	const described = await describeTranscript(transcriptFile);
+	if (!described?.cwd) throw new Error('this transcript records no working directory, so it cannot be placed in a project');
+
+	// Refuse rather than produce a second listing of one conversation.
+	for (const file of (await readdir(toAccountPath)).filter((f) => f.endsWith('.json'))) {
+		const entry = await readEntry(join(toAccountPath, file));
+		if (entry?.cliSessionId === described.cliSessionId) throw new Error('the destination account already lists this session');
+	}
+
+	const sessionId = `local_${randomUUID()}`;
+	// Mirrors the shape the desktop app writes itself. Fields it fills in from
+	// live state are left at their neutral values rather than invented.
+	const entry = {
+		sessionId,
+		cliSessionId: described.cliSessionId,
+		cwd: described.cwd,
+		originCwd: described.cwd,
+		createdAt: described.createdAt,
+		lastActivityAt: described.lastAt,
+		lastFocusedAt: described.lastAt,
+		model: described.model ?? null,
+		isArchived: false,
+		title: described.title ?? basename(described.cwd),
+		titleSource: described.title ? 'auto' : 'derived',
+		writtenBranches: described.branch ? [described.branch] : [],
+		enabledMcpTools: {},
+		remoteMcpServersConfig: [],
+		alwaysAllowedReasons: [],
+		sessionPermissionUpdates: [],
+		bridgeSessionIds: [],
+		spawnSeed: {},
+	};
+
+	await writeFile(join(toAccountPath, `${sessionId}.json`), JSON.stringify(entry, null, 2));
+	return { adopted: described.cliSessionId, to: toAccountPath };
+}
+
 /**
  * The whole picture: accounts across the top, projects down the side.
  *
  * Grouped by project because that is the rule made visible — a session belongs
  * to the directory it ran in, so it only ever moves sideways within its row.
  */
-export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = INDEX_ROOT) {
+export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = INDEX_ROOT, transcriptsRoot = TRANSCRIPTS) {
 	const [indexAccounts, namesByOrg] = await Promise.all([listIndexAccounts(indexRoot), nameAccounts(configDirs)]);
 
 	const byProject = new Map();
@@ -201,7 +331,7 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 
 			for (const entry of entries) {
 				if (!entry.cwd) continue;
-				const facts = await transcriptFacts(entry.cliSessionId, entry.cwd);
+				const facts = await transcriptFacts(entry.cliSessionId, entry.cwd, transcriptsRoot);
 
 				if (!byProject.has(entry.cwd)) byProject.set(entry.cwd, { cwd: entry.cwd, byAccount: {} });
 				const project = byProject.get(entry.cwd);
@@ -228,13 +358,41 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 		}),
 	);
 
+	// Transcripts nothing has claimed get a column of their own, so the sessions
+	// only the terminal can see are visible here — and can be handed to an
+	// account by the same drag as everything else.
+	const indexedIds = new Set();
+	for (const project of byProject.values()) {
+		for (const list of Object.values(project.byAccount)) {
+			for (const session of list) indexedIds.add(session.cliSessionId);
+		}
+	}
+
+	for (const orphan of await listUnindexed(indexedIds, transcriptsRoot)) {
+		if (!byProject.has(orphan.cwd)) byProject.set(orphan.cwd, { cwd: orphan.cwd, byAccount: {} });
+		(byProject.get(orphan.cwd).byAccount[UNINDEXED] ??= []).push({
+			id: orphan.cliSessionId,
+			cliSessionId: orphan.cliSessionId,
+			file: null,
+			title: orphan.title,
+			model: orphan.model,
+			archived: false,
+			lastAt: orphan.lastAt,
+			transcript: orphan.transcript,
+			sizeBytes: orphan.sizeBytes,
+			branch: orphan.branch,
+		});
+	}
+
 	for (const project of byProject.values()) {
 		for (const list of Object.values(project.byAccount)) list.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
 	}
 
 	const projects = [...byProject.values()].sort((a, b) => a.cwd.localeCompare(b.cwd));
 
-	return { accounts, projects, indexRoot };
+	const unindexed = projects.reduce((n, p) => n + (p.byAccount[UNINDEXED]?.length ?? 0), 0);
+
+	return { accounts, projects, indexRoot, unindexed };
 }
 
 /**

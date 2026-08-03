@@ -13,6 +13,10 @@
 
 import { escapeHtml, relativeTime } from './render.js';
 
+// The column standing for transcripts no account has claimed: resumable from
+// the terminal, invisible to the desktop app until one takes them.
+const UNINDEXED = 'unindexed';
+
 const $ = (sel) => document.querySelector(sel);
 
 const rootsBox = $('#roots');
@@ -33,6 +37,19 @@ function setStatus(message, tone = 'muted') {
 
 const accountName = (account) => account.email ?? `account ${account.accountUuid.slice(0, 8)}`;
 
+/** Accounts, with the unclaimed-transcripts column first when it has anything. */
+function columns() {
+	const hasOrphans = view.projects.some((p) => (p.byAccount[UNINDEXED]?.length ?? 0) > 0);
+	const orphanColumn = {
+		id: UNINDEXED,
+		email: null,
+		orphan: true,
+		title: 'Only in the CLI',
+		subtitle: 'not listed by any account',
+	};
+	return hasOrphans ? [orphanColumn, ...view.accounts] : view.accounts;
+}
+
 /* ------------------------------------------------------------------ render */
 
 function sessionCard(session, accountId, cwd) {
@@ -50,7 +67,8 @@ function sessionCard(session, accountId, cwd) {
 
 	return `
     <li class="session" draggable="true"
-        data-file="${escapeHtml(session.file)}"
+        data-file="${escapeHtml(session.file ?? '')}"
+        data-transcript="${escapeHtml(session.transcript ?? '')}"
         data-cli="${escapeHtml(session.cliSessionId)}"
         data-account="${escapeHtml(accountId)}"
         data-cwd="${escapeHtml(cwd)}">
@@ -60,16 +78,27 @@ function sessionCard(session, accountId, cwd) {
 }
 
 function projectRow(project) {
-	const columns = view.accounts
+	const cols = columns()
 		.map((account) => {
 			const sessions = project.byAccount[account.id] ?? [];
+			const name = account.orphan ? account.title : accountName(account);
+			const under = account.orphan ? account.subtitle : (account.orgName ?? account.orgUuid);
+			// An account nobody is signed in as anywhere the app can read shows as
+			// a bare id; adding it on the Usage tab is what gives it a name.
+			const hint = account.orphan
+				? ''
+				: account.email
+					? account.expired
+						? '<span class="col-stale">credential expired — sign in again</span>'
+						: ''
+					: '<span class="col-stale">add this account on the Usage tab to name it</span>';
 			return `
-        <div class="col" data-account="${escapeHtml(account.id)}" data-cwd="${escapeHtml(project.cwd)}">
+        <div class="col ${account.orphan ? 'orphan' : ''}" data-account="${escapeHtml(account.id)}" data-cwd="${escapeHtml(project.cwd)}">
           <div class="col-head">
             <span class="col-who">
-              <b class="${account.email ? '' : 'unknown'}">${escapeHtml(accountName(account))}</b>
-              <span class="col-path" title="${escapeHtml(account.path)}">${escapeHtml(account.orgName ?? account.orgUuid)}</span>
-              ${account.expired ? '<span class="col-stale">credential expired — sign in again</span>' : ''}
+              <b class="${account.orphan || !account.email ? 'unknown' : ''}">${escapeHtml(name)}</b>
+              <span class="col-path">${escapeHtml(under)}</span>
+              ${hint}
             </span>
             <span class="col-count">${sessions.length || ''}</span>
           </div>
@@ -83,7 +112,7 @@ function projectRow(project) {
 	return `
     <section class="project">
       <h3 title="${escapeHtml(project.cwd)}">${escapeHtml(project.cwd)}</h3>
-      <div class="cols">${columns}</div>
+      <div class="cols">${cols}</div>
     </section>`;
 }
 
@@ -111,7 +140,8 @@ function wireDragAndDrop() {
 	for (const card of projectsBox.querySelectorAll('.session')) {
 		card.addEventListener('dragstart', (e) => {
 			dragging = {
-				file: card.dataset.file,
+				file: card.dataset.file || null,
+				transcript: card.dataset.transcript || null,
 				cliSessionId: card.dataset.cli,
 				fromAccount: card.dataset.account,
 				cwd: card.dataset.cwd,
@@ -130,7 +160,11 @@ function wireDragAndDrop() {
 	}
 
 	for (const col of projectsBox.querySelectorAll('.col')) {
-		const acceptable = () => dragging && dragging.cwd === col.dataset.cwd && dragging.fromAccount !== col.dataset.account;
+		// Nothing is ever dropped back into the unclaimed column: that would mean
+		// deleting an index entry, and with it whatever the desktop app recorded
+		// against the session.
+		const acceptable = () =>
+			dragging && dragging.cwd === col.dataset.cwd && dragging.fromAccount !== col.dataset.account && col.dataset.account !== UNINDEXED;
 
 		col.addEventListener('dragover', (e) => {
 			if (!acceptable()) return;
@@ -146,18 +180,18 @@ function wireDragAndDrop() {
 			col.classList.remove('over');
 			if (!acceptable()) return;
 
-			const request = {
-				fromFile: dragging.file,
-				cliSessionId: dragging.cliSessionId,
-				toAccountPath: view.accounts.find((a) => a.id === col.dataset.account)?.path,
-			};
+			const toAccountPath = view.accounts.find((a) => a.id === col.dataset.account)?.path;
+			const fromOrphan = dragging.fromAccount === UNINDEXED;
+			const request = fromOrphan
+				? { transcriptFile: dragging.transcript, toAccountPath }
+				: { fromFile: dragging.file, cliSessionId: dragging.cliSessionId, toAccountPath };
 			dragging = null;
 
-			setStatus('moving…');
+			setStatus(fromOrphan ? 'adding…' : 'moving…');
 			try {
-				view = await window.aidash.sessions.move(request);
+				view = fromOrphan ? await window.aidash.sessions.adopt(request) : await window.aidash.sessions.move(request);
 				paintSessions();
-				setStatus('moved — restart Claude Code to see it there', 'ok-text');
+				setStatus(`${fromOrphan ? 'added' : 'moved'} — restart Claude Code to see it there`, 'ok-text');
 			} catch (err) {
 				setStatus(String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, ''), 'error');
 			}
@@ -173,8 +207,10 @@ export async function rescan() {
 		view = await window.aidash.sessions.scan();
 		paintSessions();
 		const total = view.accounts.reduce((n, a) => n + a.sessions, 0);
+		const orphans = view.unindexed ?? 0;
 		setStatus(
-			`${total} session${total === 1 ? '' : 's'} across ${view.projects.length} project${view.projects.length === 1 ? '' : 's'}`,
+			`${total} session${total === 1 ? '' : 's'} across ${view.projects.length} project${view.projects.length === 1 ? '' : 's'}` +
+				(orphans ? ` · ${orphans} only in the CLI` : ''),
 		);
 	} catch (err) {
 		setStatus(String(err?.message ?? err), 'error');
@@ -182,12 +218,3 @@ export async function rescan() {
 }
 
 $('#sessions-rescan').addEventListener('click', rescan);
-
-$('#add-root').addEventListener('click', async () => {
-	try {
-		await window.aidash.sessions.addRoot();
-		await rescan();
-	} catch (err) {
-		setStatus(String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, ''), 'error');
-	}
-});

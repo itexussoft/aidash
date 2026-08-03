@@ -48,8 +48,6 @@
 				<h1>Claude Code sessions</h1>
 				<button id="sessions-rescan">rescan</button>
 				<span id="sessions-status"></span>
-				<span class="spacer"></span>
-				<button id="add-root" class="primary">Add account folder</button>
 			</header>
 
 			<p class="lede">
@@ -60,7 +58,8 @@
 			</p>
 			<p class="lede">
 				The <strong>terminal CLI</strong> ignores this index entirely: it lists whatever sits in its own config directory, for
-				whoever is signed in. Sessions are never hidden from it, so there is nothing here to manage for CLI-only use.
+				whoever is signed in. Sessions started there can therefore be missing from the desktop app altogether — those appear
+				under <strong>Only in the CLI</strong>, and dragging one onto an account makes the desktop app list it too.
 			</p>
 
 			<div id="roots" class="roots"></div>

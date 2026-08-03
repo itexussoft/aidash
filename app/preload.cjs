@@ -25,8 +25,7 @@ contextBridge.exposeInMainWorld('aidash', {
 	sessions: {
 		scan: () => ipcRenderer.invoke('sessions:scan'),
 		move: (request) => ipcRenderer.invoke('sessions:move', request),
-		addRoot: () => ipcRenderer.invoke('sessions:addRoot'),
-		removeRoot: (id) => ipcRenderer.invoke('sessions:removeRoot', id),
+		adopt: (request) => ipcRenderer.invoke('sessions:adopt', request),
 	},
 
 	onLoginProgress: (handler) => {

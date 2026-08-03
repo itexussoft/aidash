@@ -10,7 +10,7 @@ import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AccountStore } from './src/accounts.js';
-import { scanAll, moveSession } from './src/sessions.js';
+import { scanAll, moveSession, adoptSession } from './src/sessions.js';
 import { checkForUpdate } from './src/updates.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -140,9 +140,9 @@ ipcMain.handle('accounts:cancelAdd', () => {
 
 /* ------------------------------------------------- Claude Code sessions */
 
-// Config directories are passed only so the index's account UUIDs can be
-// given readable names; the sessions themselves come from the desktop index.
-const configDirs = () => store.effectiveSessionRoots().map((r) => r.path);
+// Passed only so the index's account UUIDs can be given readable names; the
+// sessions themselves come from the desktop app's index.
+const configDirs = () => store.claudeConfigDirs();
 
 ipcMain.handle('sessions:scan', () => scanAll(configDirs()));
 
@@ -151,17 +151,12 @@ ipcMain.handle('sessions:move', async (_event, request) => {
 	return scanAll(configDirs());
 });
 
-ipcMain.handle('sessions:addRoot', async () => {
-	const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-		title: 'Choose a Claude Code config folder',
-		message: 'Pick the folder a Claude Code account uses (the one holding "projects")',
-		properties: ['openDirectory'],
-	});
-	if (canceled || !filePaths[0]) return store.effectiveSessionRoots();
-	return store.addSessionRoot(filePaths[0]);
+// Giving an account a transcript nothing had claimed: the desktop app lists
+// only what its index names, so this writes the entry it was missing.
+ipcMain.handle('sessions:adopt', async (_event, request) => {
+	await adoptSession(request);
+	return scanAll(configDirs());
 });
-
-ipcMain.handle('sessions:removeRoot', (_event, id) => store.removeSessionRoot(id));
 
 ipcMain.handle('accounts:confirmRemove', async (_event, label) => {
 	const { response } = await dialog.showMessageBox(mainWindow, {

@@ -13,7 +13,6 @@
 
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { codex } from './providers/codex.js';
 import { claude } from './providers/claude.js';
 import { DEFAULT_ROOT } from './sessions.js';
@@ -30,103 +29,29 @@ export class AccountStore {
 	async load() {
 		try {
 			const raw = JSON.parse(await readFile(this.file, 'utf8'));
-			this.state = {
-				accounts: raw.accounts ?? [],
-				lastRefreshAt: raw.lastRefreshAt ?? null,
-				sessionRoots: raw.sessionRoots ?? null,
-			};
+			this.state = { accounts: raw.accounts ?? [], lastRefreshAt: raw.lastRefreshAt ?? null };
 		} catch {
-			this.state = { accounts: [], lastRefreshAt: null, sessionRoots: null };
+			this.state = { accounts: [], lastRefreshAt: null };
 		}
-
-		// Holds only folders the user pointed at by hand; the interesting ones are
-		// derived in effectiveSessionRoots().
-		if (!this.state.sessionRoots) this.state.sessionRoots = [];
 
 		await mkdir(this.accountsDir, { recursive: true });
 		return this.state;
 	}
 
 	/**
-	 * Every Claude Code config directory worth showing in Utils.
+	 * Claude Code config directories the app can read an identity from.
 	 *
-	 * Enrolled Claude accounts already own one, which is the whole point of the
-	 * tab: without listing them there is only ever a single column and nothing
-	 * to drag between. The default directory comes first because it is where
-	 * work normally happens, and manually added folders cover accounts the app
-	 * does not track for usage.
+	 * Used only to put readable names on the account UUIDs in the desktop app's
+	 * session index — the sessions themselves come from that index, not from
+	 * these directories. An account signed in nowhere the app knows shows as a
+	 * bare id until it is added on the Usage tab.
 	 */
-	effectiveSessionRoots() {
-		const roots = [{ id: 'default', path: DEFAULT_ROOT, label: '~/.claude', kind: 'default' }];
-
+	claudeConfigDirs() {
+		const dirs = [DEFAULT_ROOT];
 		for (const account of this.state.accounts) {
-			if (account.provider !== 'claude') continue;
-			roots.push({
-				id: `account:${account.id}`,
-				path: this.dirFor(account.id),
-				label: account.label,
-				email: account.email ?? null,
-				kind: 'account',
-			});
+			if (account.provider === 'claude') dirs.push(this.dirFor(account.id));
 		}
-
-		for (const extra of this.state.sessionRoots) roots.push({ ...extra, kind: 'manual' });
-
-		// A folder can arrive twice — most easily by being picked by hand before
-		// the account that owns it was enrolled. Two columns over one directory
-		// would offer a move that is really a no-op, so the derived entry wins.
-		const seen = new Set();
-		return roots.filter((root) => {
-			if (seen.has(root.path)) return false;
-			seen.add(root.path);
-			return true;
-		});
-	}
-
-	async addSessionRoot(path, label) {
-		if (this.effectiveSessionRoots().some((r) => r.path === path)) throw new Error('that folder is already listed');
-
-		const id = `manual-${Date.now().toString(36)}`;
-		this.state.sessionRoots.push({ id, path, label: label || path.replace(homedir(), '~') });
-		await this.save();
-		return this.effectiveSessionRoots();
-	}
-
-	async removeSessionRoot(id) {
-		// Only forgets the folder; nothing on disk is touched. Derived roots are
-		// not removable here — an account is removed from the Usage tab instead.
-		if (!id.startsWith('manual-')) throw new Error('this folder comes from an enrolled account and cannot be removed here');
-		this.state.sessionRoots = this.state.sessionRoots.filter((r) => r.id !== id);
-		await this.save();
-		return this.effectiveSessionRoots();
-	}
-
-	async save() {
-		await mkdir(this.accountsDir, { recursive: true });
-		await writeFile(this.file, JSON.stringify(this.state, null, 2), { mode: 0o600 });
-	}
-
-	dirFor(id) {
-		return join(this.accountsDir, id);
-	}
-
-	/** Slug that survives non-Latin names, so two accounts cannot collide on an empty id. */
-	makeId(provider, label) {
-		const base =
-			`${provider}-${label}`
-				.toLowerCase()
-				.replace(/[^\p{L}\p{N}\s-]/gu, '')
-				.trim()
-				.replace(/[\s_]+/g, '-')
-				.replace(/-+/g, '-')
-				.replace(/^-|-$/g, '')
-				.slice(0, 40) || provider;
-
-		if (!this.state.accounts.some((a) => a.id === base)) return base;
-		for (let n = 2; ; n++) {
-			const candidate = `${base}-${n}`;
-			if (!this.state.accounts.some((a) => a.id === candidate)) return candidate;
-		}
+		return [...new Set(dirs)];
 	}
 
 	/**

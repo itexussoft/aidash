@@ -204,7 +204,10 @@ console.log('\nsession index');
 		JSON.stringify(entry({ sessionId: 'local_2222', cliSessionId: 'cli-2222', cwd: '/Users/test/other', title: 'Other' })),
 	);
 
-	const before = await scanAll([], index);
+	const transcripts = join(index, '__transcripts');
+	await mkdir(transcripts, { recursive: true });
+
+	const before = await scanAll([], index, transcripts);
 	check('both account/org pairs are listed', before.accounts.length === 2);
 	check('each project becomes a row', before.projects.length === 2);
 	const demo = before.projects.find((p) => p.cwd === '/Users/test/demo');
@@ -217,7 +220,7 @@ console.log('\nsession index');
 	check('a missing transcript is reported', demo.byAccount['account-a/org-a'][0].transcript === null);
 
 	await moveSession({ fromFile: join(A, 'local_1111.json'), toAccountPath: B, cliSessionId: 'cli-1111' });
-	const after = await scanAll([], index);
+	const after = await scanAll([], index, transcripts);
 	const moved = after.projects.find((p) => p.cwd === '/Users/test/demo');
 	check('session leaves the source account', !moved.byAccount['account-a/org-a']);
 	check('session appears under the destination', moved.byAccount['account-b/org-b']?.length === 1);
@@ -244,6 +247,15 @@ console.log('\nsession index');
 	check(
 		'listing the same transcript twice is refused',
 		/already lists this session/.test(await rejects(() => moveSession({ fromFile: join(A, 'local_3333.json'), toAccountPath: B, cliSessionId: 'cli-1111' }))),
+	);
+
+	// A transcript no index names is invisible to the desktop app but resumable
+	// from the terminal; adopting it writes the entry it was missing.
+	const { adoptSession, UNINDEXED } = await import('./src/sessions.js');
+	check('the unclaimed column has a stable name', UNINDEXED === 'unindexed');
+	check(
+		'adopting a transcript that is not there is refused',
+		/no longer there/.test(await rejects(() => adoptSession({ transcriptFile: join(index, 'nope.jsonl'), toAccountPath: B }))),
 	);
 
 	const { claudeEnv, keychainService, DEFAULT_CONFIG_DIR } = await import('./src/claude-config.js');
