@@ -1,0 +1,38 @@
+name: Retire a release
+
+# Removes a release that should not have shipped, along with its tag.
+#
+# Triggered by pushing `retire-<tag>` rather than by workflow_dispatch: starting
+# a dispatch needs an API token, whereas pushing a tag needs only the git remote
+# that is already configured. The release workflow matches `v*.*.*`, so a
+# `retire-` tag cannot set a build going by accident.
+on:
+  push:
+    tags: ['retire-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  retire:
+    name: Retire
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the release, its tag, and this trigger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          target="${GITHUB_REF_NAME#retire-}"
+
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [ "$target" = "$latest" ]; then
+            echo "::error title=refused::$target is the current release; retiring it would leave downloads pointing at nothing"
+            exit 1
+          fi
+
+          echo "retiring $target (current release is $latest)"
+          gh release delete "$target" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+
+          # Leave no trigger behind, so the tag list stays readable.
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$GITHUB_REF_NAME"

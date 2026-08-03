@@ -111,6 +111,54 @@ export function usageMockup() {
 </svg>`;
 }
 
+/**
+ * The same window at phone width.
+ *
+ * The wide drawings are 720 units across. Scaled into a 340px column they put
+ * their 9px labels at 4px, which is not small text but texture — so the phone
+ * gets its own narrower crop, drawn at the same absolute type sizes over half
+ * the width. Fewer cards, the same point.
+ */
+const frameCompact = (w, active) => `
+  <rect x="0.5" y="0.5" width="${w - 1}" height="30" fill="${SUBTLE}"/>
+  <circle cx="15" cy="15" r="4" fill="#e8695a"/>
+  <circle cx="28" cy="15" r="4" fill="#e0b04a"/>
+  <circle cx="41" cy="15" r="4" fill="#5cc46f"/>
+  <line x1="0" y1="30" x2="${w}" y2="30" stroke="${LINE}"/>
+  ${label(18, 50, 'Usage', { size: 10.5, weight: active === 'usage' ? 600 : 400, fill: active === 'usage' ? TEXT : MUTED })}
+  ${label(66, 50, 'Local Sessions', { size: 10.5, weight: active === 'sessions' ? 600 : 400, fill: active === 'sessions' ? TEXT : MUTED })}
+  <line x1="0" y1="60" x2="${w}" y2="60" stroke="${LINE}"/>
+  <rect x="${active === 'usage' ? 16 : 64}" y="58" width="${active === 'usage' ? 38 : 76}" height="2.5" rx="1" fill="${ACCENT}"/>`;
+
+/** Usage on a phone: one account per provider, still one bar per limit. */
+export function usageMockupCompact() {
+	const W = 360;
+	const H = 356;
+	return `
+<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="10" fill="${SURFACE}" stroke="${LINE}"/>
+  ${frameCompact(W, 'usage')}
+
+  ${label(18, 86, 'Usage', { size: 14, weight: 650 })}
+  <rect x="64" y="76" width="58" height="15" rx="7.5" fill="${SUBTLE}"/>
+  ${label(93, 87, '4 ACCOUNTS', { size: 7.5, weight: 600, fill: MUTED, anchor: 'middle' })}
+  <rect x="${W - 60}" y="75" width="42" height="18" rx="5" fill="${ACCENT}"/>
+  ${label(W - 39, 87, 'Add', { size: 9, weight: 600, fill: '#fff', anchor: 'middle' })}
+
+  ${groupLabel(18, 118, W - 18, '▾ CODEX')}
+  ${card(18, 126, W - 36, 96, 'Work', [
+		{ name: 'Weekly window', pct: 34, colour: ACCENT },
+		{ name: 'Spend control', pct: 100, colour: CRIT },
+	])}
+
+  ${groupLabel(18, 250, W - 18, '▾ CLAUDE')}
+  ${card(18, 258, W - 36, 82, 'Team', [
+		{ name: 'Weekly, all models', pct: 82, colour: WARN },
+		{ name: 'Session', pct: 8, colour: ACCENT },
+	])}
+</svg>`;
+}
+
 /** A session tile: one readable line, the rest as bars. */
 const tile = (x, y, w, title) => `
   <rect x="${x}" y="${y}" width="${w}" height="32" rx="5" fill="${SUBTLE}" stroke="${LINE}"/>
@@ -179,6 +227,49 @@ export function sessionsMockup() {
 </svg>`;
 }
 
+/** Local Sessions on a phone: two columns and the hand-over between them. */
+export function sessionsMockupCompact() {
+	const W = 360;
+	const H = 356;
+	const cw = 156;
+	return `
+<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="10" fill="${SURFACE}" stroke="${LINE}"/>
+  ${frameCompact(W, 'sessions')}
+
+  ${label(18, 86, 'Local Sessions', { size: 14, weight: 650 })}
+  <rect x="${W - 74}" y="75" width="56" height="18" rx="5" fill="${SURFACE}" stroke="${LINE}"/>
+  ${label(W - 46, 87, 'Rescan', { size: 9, fill: MUTED, anchor: 'middle' })}
+
+  <rect x="18" y="106" width="${W - 36}" height="26" rx="6" fill="#fdf6e8" stroke="#eddcb4"/>
+  ${label(30, 123, 'Unofficial, and at your own risk.', { size: 8.5, weight: 600, fill: '#8a6a1f' })}
+
+  ${ghost(18, 152, 140, 6, '#d5dade')}
+
+  ${column(18, 170, cw, 168, 'Only in the CLI', tile(28, 218, cw - 20, 'Clone repository') + tile(28, 258, cw - 20, 'Review the schema'), {
+		dashed: true,
+	})}
+
+  ${column(
+		186,
+		170,
+		cw,
+		168,
+		'Account A',
+		`<rect x="196" y="218" width="${cw - 20}" height="80" rx="5" fill="#f0fbf3" stroke="${ACCENT}" stroke-dasharray="5 4"/>
+     ${label(186 + cw / 2, 262, 'drop here', { size: 9, fill: ACCENT, anchor: 'middle' })}`,
+		{ accent: ACCENT },
+	)}
+
+  <!-- The session being dragged, lifted clear of its column -->
+  <g transform="translate(96 226) rotate(-4)">
+    <rect x="0" y="0" width="150" height="32" rx="5" fill="${SURFACE}" stroke="${ACCENT}" stroke-width="1.5"/>
+    ${label(10, 14, 'Integrate the module', { size: 9, weight: 500 })}
+    ${ghost(10, 21, 80, 4)}
+  </g>
+</svg>`;
+}
+
 /**
  * The logo lockup: the gauge glyph and the wordmark as one unit.
  *
@@ -186,18 +277,20 @@ export function sessionsMockup() {
  * which reads as an icon pasted next to a label rather than a logo. The tile is
  * gone; the ring now sits at cap height as a glyph, and the green lives only in
  * the arc so it is not competing with a coloured half of the word.
+ *
+ * Nothing here names a foreground colour: the word and the ring's track both
+ * take `currentColor`, so the same markup rides the header from white-on-dark
+ * to ink-on-light as it crosses the hero, with no second copy to keep in step.
  */
-export function logoLockup({ onDark = false } = {}) {
-	const ink = onDark ? '#ffffff' : INK;
-	const track = onDark ? 'rgb(255 255 255 / .22)' : '#d7dce0';
+export function logoLockup() {
 	// "dash" carries the accent, the same green as the filled arc, so the mark
 	// and the word are visibly one thing rather than two objects side by side.
 	return `
 <span class="lockup">
   <svg class="lockup-mark" viewBox="0 0 40 40" aria-hidden="true">
-    <circle cx="20" cy="20" r="14" fill="none" stroke="${track}" stroke-width="7"/>
-    <path d="M 20 6 A 14 14 0 1 1 6.3 23.3" fill="none" stroke="${ACCENT}" stroke-width="7"/>
+    <circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".2" stroke-width="6.5"/>
+    <path d="M 20 6 A 14 14 0 1 1 6.3 23.3" fill="none" stroke="${ACCENT}" stroke-width="6.5" stroke-linecap="round"/>
   </svg>
-  <span class="lockup-word" style="color:${ink}">ai<span style="color:${ACCENT}">dash</span></span>
+  <span class="lockup-word">ai<span class="lockup-accent">dash</span></span>
 </span>`;
 }
