@@ -13,9 +13,32 @@ import { encodeCwd } from './src/sessions.js';
 import { spawnable } from './src/locate.js';
 
 let failures = 0;
+
+// On a runner, a failure also becomes a GitHub annotation. Job logs need admin
+// rights to fetch, so a failure on a platform nobody has to hand — which is the
+// whole reason these run on Windows — was otherwise a red cross with no name
+// attached. Annotations are public.
+const annotate = (name) => {
+	if (process.env.GITHUB_ACTIONS) console.log(`::error title=test failed::${name}`);
+};
+
+// A section that throws never reaches a check, so it would otherwise fail with
+// nothing recorded anywhere readable.
+for (const event of ['uncaughtException', 'unhandledRejection']) {
+	process.on(event, (err) => {
+		const detail = `${err?.message ?? err}`.split('\n')[0];
+		console.error(`\nthrew during ${event}: ${err?.stack ?? err}\n`);
+		annotate(`${event}: ${detail}`);
+		process.exit(1);
+	});
+}
+
 const check = (name, cond) => {
 	console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}`);
-	if (!cond) failures++;
+	if (!cond) {
+		failures++;
+		annotate(name);
+	}
 };
 
 const card = (over = {}) =>

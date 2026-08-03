@@ -45,10 +45,19 @@ jobs:
       - run: npm test
 
       - name: Build
-        # Nothing here is signed, and electron-builder otherwise stops to look
-        # for an identity it will not find.
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # macOS: sign with the Developer ID cert and notarize with Apple.
+          # electron-builder does both automatically once these are set —
+          # see MacTargetHelper.getNotarizeOptions in app-builder-lib.
+          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERTIFICATE_P12 || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          # Windows: still unsigned — no cert for it, and electron-builder
+          # otherwise stops on this runner to look for an identity it will
+          # not find.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.os == 'windows-latest' && 'false' || 'true' }}
         run: npx electron-builder ${{ matrix.args }} --publish never
 
       - uses: actions/upload-artifact@v4
@@ -77,4 +86,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" artifacts/* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Unsigned builds. macOS will warn on first launch: right-click the app and choose Open. See the About page in the app for the full disclaimer."
+            --notes "macOS build is signed and notarized by Apple — it opens normally. Windows build is unsigned: Windows will warn on first launch (More info → Run anyway). See the About page in the app for the full disclaimer."
