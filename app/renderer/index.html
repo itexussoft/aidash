@@ -67,6 +67,20 @@
 			</section>
 		</section>
 
+		<dialog id="rename-dialog">
+			<form method="dialog">
+				<h2>Rename account</h2>
+				<label for="rename-input">Name</label>
+				<input id="rename-input" autocomplete="off" spellcheck="false" required />
+				<p class="hint">Only the label changes — the account stays signed in.</p>
+				<p class="error" id="rename-error" hidden></p>
+				<menu>
+					<button type="button" id="rename-cancel">Cancel</button>
+					<button type="button" id="rename-save" class="primary">Save</button>
+				</menu>
+			</form>
+		</dialog>
+
 		<!-- Add-account flow -->
 		<dialog id="add-dialog">
 			<form method="dialog" id="add-form">

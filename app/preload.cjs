@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('aidash', {
 	supplyCode: (code) => ipcRenderer.invoke('accounts:supplyCode', code),
 	cancelAdd: () => ipcRenderer.invoke('accounts:cancelAdd'),
 
+	renameAccount: (id, label) => ipcRenderer.invoke('accounts:rename', { id, label }),
 	confirmRemove: (label) => ipcRenderer.invoke('accounts:confirmRemove', label),
 	removeAccount: (id) => ipcRenderer.invoke('accounts:remove', id),
 

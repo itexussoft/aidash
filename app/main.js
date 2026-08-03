@@ -78,6 +78,11 @@ ipcMain.handle('accounts:refresh', async () => {
 	return { ...state, availability: store.availability() };
 });
 
+ipcMain.handle('accounts:rename', async (_event, { id, label }) => {
+	const state = await store.rename(id, label);
+	return { ...state, availability: store.availability() };
+});
+
 ipcMain.handle('accounts:remove', async (_event, id) => {
 	await store.remove(id);
 	return { ...store.state, availability: store.availability() };

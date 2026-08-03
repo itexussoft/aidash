@@ -77,7 +77,52 @@ function paint() {
 			paint();
 		});
 	}
+
+	for (const btn of grid.querySelectorAll('button.rename')) {
+		btn.addEventListener('click', () => openRename(btn.dataset.id, btn.dataset.label));
+	}
 }
+
+/* ------------------------------------------------------------------ rename */
+
+const renameDialog = $('#rename-dialog');
+const renameInput = $('#rename-input');
+const renameError = $('#rename-error');
+let renamingId = null;
+
+function openRename(id, label) {
+	renamingId = id;
+	renameInput.value = label;
+	renameError.hidden = true;
+	renameDialog.showModal();
+	renameInput.select();
+}
+
+async function saveRename() {
+	const label = renameInput.value.trim();
+	if (!label) {
+		renameError.textContent = 'A name is required.';
+		renameError.hidden = false;
+		return;
+	}
+	try {
+		state = await window.aidash.renameAccount(renamingId, label);
+		renameDialog.close();
+		paint();
+	} catch (err) {
+		renameError.textContent = String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, '');
+		renameError.hidden = false;
+	}
+}
+
+$('#rename-save').addEventListener('click', saveRename);
+$('#rename-cancel').addEventListener('click', () => renameDialog.close());
+renameInput.addEventListener('keydown', (e) => {
+	if (e.key === 'Enter') {
+		e.preventDefault();
+		saveRename();
+	}
+});
 
 async function refresh() {
 	refreshBtn.disabled = true;

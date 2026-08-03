@@ -200,7 +200,9 @@ const RENDERERS = { codex: renderCodex, claude: renderClaude };
 
 export function renderCard(account) {
 	const { id, provider, label, email, plan, payload, lastOkAt, lastError } = account;
-	const remove = `<button class="remove" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">remove</button>`;
+	const actions =
+		`<button class="rename" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">rename</button>` +
+		`<button class="remove" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">remove</button>`;
 	const identity = [email ?? payload?.email ?? payload?.account?.email, plan ?? payload?.plan_type ?? payload?.account?.planType]
 		.filter(Boolean)
 		.join(' · ');
@@ -218,7 +220,7 @@ export function renderCard(account) {
 		return `<article class="card err">${header}
       <p class="error">${escapeHtml(lastError)}</p>
       <p class="muted">Remove it and add it again to sign in afresh.</p>
-      <footer><span>never reported</span>${remove}</footer>
+      <footer><span>never reported</span><span class="foot-actions">${actions}</span></footer>
     </article>`;
 	}
 
@@ -227,7 +229,7 @@ export function renderCard(account) {
 	if (!payload) {
 		return `<article class="card">${header}
       <p class="muted">Waiting for the first refresh.</p>
-      <footer><span>no data yet</span>${remove}</footer>
+      <footer><span>no data yet</span><span class="foot-actions">${actions}</span></footer>
     </article>`;
 	}
 
@@ -241,7 +243,7 @@ export function renderCard(account) {
       <span>updated ${escapeHtml(relativeTime(lastOkAt))}</span>
       <span class="foot-actions">
         <details><summary>raw</summary><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></details>
-        ${remove}
+        ${actions}
       </span>
     </footer>
   </article>`;

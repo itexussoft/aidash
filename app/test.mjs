@@ -114,6 +114,9 @@ const pending = card({ label: 'Pending' });
 check('freshly added card explains itself', pending.includes('Waiting for the first refresh'));
 check('pending card is not an error', !pending.includes('card err'));
 check('pending card can be removed', pending.includes('data-id="a"'));
+check('every card offers rename alongside remove', ['button class="rename"', 'button class="remove"'].every((s) => pending.includes(s)));
+check('rename carries the current label for the dialog', codexCard.includes('class="rename" data-id="a" data-label="Codex"'));
+check('a label with markup is escaped on the rename button', card({ label: '<b>x</b>' }).includes('data-label="&lt;b&gt;x&lt;/b&gt;"'));
 
 const broken = card({ label: 'Broken', lastError: 'no stored credentials — re-authorize this account' });
 check('failed card shows the reason', broken.includes('no stored credentials'));

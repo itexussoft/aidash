@@ -169,6 +169,25 @@ export class AccountStore {
 		return account;
 	}
 
+	/**
+	 * Changes what an account is called.
+	 *
+	 * Only the label moves. The id is what names the directory holding the
+	 * account's credentials, so renaming must not touch it — a "tidier" id would
+	 * orphan the very folder the account signs in through.
+	 */
+	async rename(id, label) {
+		const account = this.state.accounts.find((a) => a.id === id);
+		if (!account) throw new Error('no such account');
+
+		const next = String(label ?? '').trim();
+		if (!next) throw new Error('a name is required');
+
+		account.label = next;
+		await this.save();
+		return this.state;
+	}
+
 	async remove(id) {
 		const account = this.state.accounts.find((a) => a.id === id);
 		if (!account) return;
