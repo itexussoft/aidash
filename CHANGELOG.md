@@ -8,6 +8,8 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+## 0.2.0
+
 - Says which account has the most room left, and when the next window frees up
 - Menu bar item counting down to that reset, with notifications when it arrives
 - Refreshes on its own on a schedule you set, and marks how old a reading is
