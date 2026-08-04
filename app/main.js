@@ -32,6 +32,7 @@ import { BridgeJournal, bridgeState } from './src/bridges.js';
 import { remoteSessions } from './src/remote.js';
 import { proposeOwners } from './src/matching.js';
 import { buildDigest, digestMarkdown } from './src/digest.js';
+import { searchTranscripts } from './src/search.js';
 import { DEFAULT_CONFIG_DIR } from './src/claude-config.js';
 import { identifyRoot } from './src/sessions.js';
 import { writeFile } from 'node:fs/promises';
@@ -428,6 +429,28 @@ ipcMain.handle('sessions:matchRemote', async () => {
 		};
 	} catch (err) {
 		return { note: String(err?.message ?? err).slice(0, 200) };
+	}
+});
+
+/**
+ * Searching every transcript at once.
+ *
+ * One search at a time: typing another letter makes the one in flight useless,
+ * so it is abandoned rather than left to finish and race the newer answer back.
+ */
+let searching = null;
+
+ipcMain.handle('sessions:search', async (_event, { query, targets }) => {
+	searching?.abort();
+	const controller = new AbortController();
+	searching = controller;
+
+	try {
+		return await searchTranscripts({ targets, query, signal: controller.signal });
+	} catch (err) {
+		return { results: [], scanned: 0, complete: false, note: String(err?.message ?? err).slice(0, 200) };
+	} finally {
+		if (searching === controller) searching = null;
 	}
 });
 

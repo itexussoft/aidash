@@ -420,6 +420,50 @@ button.ghost:hover:not(:disabled) {
 	padding: 0 var(--step-1);
 }
 
+/* -------------------------------------------------------------- search */
+
+.search {
+	font: inherit;
+	font-size: 12.5px;
+	color: var(--fg);
+	background: var(--surface);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	padding: var(--step-1) var(--step-2);
+	min-width: 200px;
+}
+.search::placeholder {
+	color: var(--faint);
+}
+.search:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+/* What the transcript actually said, quoted. Without it a filtered list is a
+   claim the user has to open a session to check. */
+.s-hit {
+	display: block;
+	margin-top: var(--step-1);
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--muted);
+	border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+	padding-left: var(--step-2);
+}
+.s-hit b {
+	color: var(--faint);
+	font-weight: 600;
+	text-transform: uppercase;
+	font-size: 9px;
+	letter-spacing: 0.06em;
+	margin-right: var(--step-1);
+}
+.s-hit i {
+	color: var(--faint);
+	font-style: normal;
+}
+
 /* --------------------------------------------------------- project page */
 
 .project-open {

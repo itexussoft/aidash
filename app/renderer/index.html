@@ -66,6 +66,15 @@
 					<h1>Local Sessions</h1>
 				</div>
 				<div class="head-actions">
+					<input
+						id="sessions-search"
+						class="search"
+						type="search"
+						placeholder="Search every transcript…"
+						autocomplete="off"
+						spellcheck="false"
+						title="Filters on titles, paths and branches as you type. After a moment it also reads every transcript on this machine — every account, both tools — and keeps the sessions that said it."
+					/>
 					<button
 						id="sessions-remote"
 						class="ghost"
@@ -78,8 +87,11 @@
 				<p class="head-meta" id="sessions-status"></p>
 			</header>
 
-			<aside class="notice">
-				<strong>Unofficial, and at your own risk.</strong>
+			<!-- Folded away while a search is on: results below three paragraphs of
+			     preamble are results nobody sees. -->
+			<div id="sessions-explain">
+				<aside class="notice">
+					<strong>Unofficial, and at your own risk.</strong>
 				Claude Code and Codex publish no documentation for how they store sessions on disk. Everything here was worked out by
 				reading the files themselves, so a change on either side can break it without warning. Moving, copying and deleting
 				sessions edits those files directly. Keep your own backup of anything you cannot afford to lose.
@@ -100,7 +112,8 @@
 				<strong>Codex</strong> is one column rather than one per account: nothing in its storage records an account, so every
 				session is visible to whichever account is signed in. Dragging between Codex and Claude <em>copies</em> the dialogue
 				instead of moving it — the two describe conversations differently — and asks first.
-			</p>
+				</p>
+			</div>
 
 			<section id="remote-panel" class="remote-panel" hidden></section>
 

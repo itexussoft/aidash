@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('aidash', {
 		export: (request) => ipcRenderer.invoke('sessions:export', request),
 		remote: () => ipcRenderer.invoke('sessions:remote'),
 		matchRemote: () => ipcRenderer.invoke('sessions:matchRemote'),
+		search: (request) => ipcRenderer.invoke('sessions:search', request),
 		digest: (request) => ipcRenderer.invoke('sessions:digest', request),
 		saveDigest: (request) => ipcRenderer.invoke('sessions:saveDigest', request),
 		forgetMatches: () => ipcRenderer.invoke('sessions:forgetMatches'),

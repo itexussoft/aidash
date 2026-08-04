@@ -32,6 +32,7 @@ const projectsBox = $('#projects');
 const emptyBox = $('#sessions-empty');
 const statusLabel = $('#sessions-status');
 const remotePanel = $('#remote-panel');
+const explainBox = $('#sessions-explain');
 
 const renameDialog = $('#session-rename-dialog');
 const renameInput = $('#session-rename-input');
@@ -41,12 +42,123 @@ let view = { accounts: [], projects: [] };
 let dragging = null;
 let renaming = null;
 
+/* ------------------------------------------------------------------ search */
+
+/**
+ * Two searches at once, deliberately.
+ *
+ * Titles, paths and branches are already in memory, so filtering on them can
+ * happen on every keystroke and does. Transcripts are hundreds of megabytes on
+ * disk, so reading them waits until the typing stops — and when it finishes,
+ * its hits are added to the same filter rather than replacing it. The list
+ * therefore narrows immediately and then narrows again, instead of doing
+ * nothing at all until the disk has been read.
+ */
+let query = '';
+let hits = new Map();
+let searchNote = '';
+let searchTimer = null;
+
+/** How long the typing has to stop before the disk is touched. */
+const READ_AFTER_MS = 450;
+
+const matches = (session, project) => {
+	const q = query.toLowerCase();
+	if (!q) return true;
+	// A path match reveals the whole project: searching for a folder means
+	// asking about it, not about one session inside it.
+	if (project.cwd.toLowerCase().includes(q)) return true;
+	for (const field of [session.title, session.branch, session.model]) {
+		if (field && String(field).toLowerCase().includes(q)) return true;
+	}
+	return session.transcript ? hits.has(session.transcript) : false;
+};
+
+/** The view, narrowed. Projects with nothing left in them drop out entirely. */
+function visibleProjects() {
+	if (!query) return view.projects;
+
+	const kept = [];
+	for (const project of view.projects) {
+		const byAccount = {};
+		let any = false;
+		for (const [columnId, sessions] of Object.entries(project.byAccount)) {
+			const surviving = sessions.filter((s) => matches(s, project));
+			if (surviving.length) any = true;
+			byAccount[columnId] = surviving;
+		}
+		if (any) kept.push({ ...project, byAccount });
+	}
+	return kept;
+}
+
+function targets() {
+	const out = [];
+	for (const project of view.projects) {
+		for (const [columnId, sessions] of Object.entries(project.byAccount)) {
+			for (const session of sessions) {
+				if (session.transcript) out.push({ transcript: session.transcript, tool: columnId === CODEX ? 'codex' : 'claude' });
+			}
+		}
+	}
+	// The same transcript is listed by every account that claims it; reading it
+	// more than once would cost the same again for nothing.
+	return [...new Map(out.map((t) => [t.transcript, t])).values()];
+}
+
+async function readTranscripts(forQuery) {
+	searchNote = 'reading transcripts…';
+	paintSessions();
+
+	try {
+		const found = await window.aidash.sessions.search({ query: forQuery, targets: targets() });
+		// A slower answer to an older question must not overwrite a newer one.
+		if (forQuery !== query) return;
+
+		hits = new Map(found.results.map((r) => [r.transcript, r]));
+		searchNote = found.results.length
+			? `${found.results.length} said it, of ${found.scanned} transcripts read`
+			: `nothing said it, of ${found.scanned} transcripts read`;
+		paintSessions();
+	} catch (err) {
+		if (forQuery !== query) return;
+		searchNote = `transcripts could not be read — ${reason(err)}`;
+		paintSessions();
+	}
+}
+
+function onSearch(value) {
+	query = value.trim();
+	hits = new Map();
+	clearTimeout(searchTimer);
+
+	if (query.length < 2) {
+		searchNote = query ? 'keep typing to search inside transcripts' : '';
+		paintSessions();
+		return;
+	}
+
+	searchNote = 'filtering on titles…';
+	paintSessions();
+	searchTimer = setTimeout(() => readTranscripts(query), READ_AFTER_MS);
+}
+
 const formatSize = (bytes) =>
 	bytes == null ? null : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-/** The standing summary under the heading — what is here, not what just happened. */
+/**
+ * The standing summary under the heading — what is here, not what just
+ * happened. A search replaces it while one is on, and hands it back after.
+ */
+let standing = '';
+
 function setSummary(message) {
-	statusLabel.textContent = message ?? '';
+	standing = message ?? '';
+	showSummary();
+}
+
+function showSummary() {
+	statusLabel.textContent = query ? [`matching “${query}”`, searchNote].filter(Boolean).join(' · ') : standing;
 }
 
 const accountName = (account) => account.email ?? `account ${account.accountUuid.slice(0, 8)}`;
@@ -128,6 +240,7 @@ function remoteBadge(session) {
 }
 
 function sessionCard(session, column, cwd) {
+	const hit = session.transcript ? hits.get(session.transcript) : null;
 	const meta = [
 		session.lastAt ? relativeTime(session.lastAt) : null,
 		formatSize(session.sizeBytes),
@@ -169,11 +282,15 @@ function sessionCard(session, column, cwd) {
         ${actions}
       </span>
       <span class="s-meta">${escapeHtml(meta)}</span>
+      ${hit ? `<span class="s-hit"><b>${escapeHtml(hit.role === 'assistant' ? 'reply' : 'you')}</b> ${escapeHtml(hit.snippet)}${hit.hits > 1 ? ` <i>+${hit.hits - 1}</i>` : ''}</span>` : ''}
     </li>`;
 }
 
 function projectRow(project) {
 	const cols = columns()
+		// While a search is on, a column with nothing left in it is not a drop
+		// target anyone is aiming at — it is width taken from the results.
+		.filter((column) => !query || (project.byAccount[column.id] ?? []).length > 0)
 		.map((column) => {
 			const sessions = project.byAccount[column.id] ?? [];
 			// An account nobody is signed in as anywhere the app can read shows as
@@ -227,13 +344,26 @@ export function paintSessions() {
 		view.codex ? `<span class="root-chip">Codex · ${escapeHtml(String(view.codex.sessions))} sessions</span>` : '',
 	].join('');
 
-	const hasSessions = view.projects.length > 0;
-	emptyBox.hidden = hasSessions;
-	projectsBox.hidden = !hasSessions;
-	projectsBox.innerHTML = view.projects.map(projectRow).join('');
+	const shown = visibleProjects();
+	const hasSessions = shown.length > 0;
 
+	// Three paragraphs of preamble between the search box and its results is the
+	// same as having no results.
+	explainBox.hidden = Boolean(query);
+
+	emptyBox.hidden = hasSessions || Boolean(query);
+	projectsBox.hidden = !hasSessions && !query;
+	projectsBox.innerHTML = hasSessions
+		? shown.map(projectRow).join('')
+		: query
+			? `<p class="muted">Nothing matches “${escapeHtml(query)}”${searchNote ? ` — ${escapeHtml(searchNote)}` : ''}.</p>`
+			: '';
+
+	showSummary();
 	wireCards();
 }
+
+$('#sessions-search').addEventListener('input', (e) => onSearch(e.target.value));
 
 /* ------------------------------------------------------------------ actions */
 

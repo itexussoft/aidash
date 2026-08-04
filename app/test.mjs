@@ -505,6 +505,71 @@ console.log('\nproject brief');
 	check('files are listed for pasting', md.includes('`src/parse.js`'));
 }
 
+/* -------------------------------------------------------- searching them all */
+
+// The claim this makes is "these sessions said it", so a hit inside a tool
+// result or a file path would be a lie told confidently.
+console.log('\nsearching every transcript');
+{
+	const { mkdtemp, writeFile: write } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const { join: j } = await import('node:path');
+	const { searchTranscripts } = await import('./src/search.js');
+
+	const dir = await mkdtemp(j(tmpdir(), 'aidash-search-'));
+
+	const said = j(dir, 'said.jsonl');
+	await write(
+		said,
+		[
+			JSON.stringify({ type: 'user', message: { content: 'How do I rotate the refresh token safely?' } }),
+			JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Write the rotated token back so the CLI keeps working.' }] } }),
+		].join('\n'),
+	);
+
+	const onlyTooling = j(dir, 'tooling.jsonl');
+	await write(
+		onlyTooling,
+		[
+			JSON.stringify({ type: 'user', message: { content: 'Fix the build' } }),
+			// The term appears, but only in a tool call and its result.
+			JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/src/refresh-token.js' } }] } }),
+			JSON.stringify({ type: 'user', message: { content: 'Result of calling the Read tool: refresh token helper' } }),
+		].join('\n'),
+	);
+
+	const codex = j(dir, 'codex.jsonl');
+	await write(
+		codex,
+		[JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'the refresh token expired again' }] } })].join('\n'),
+	);
+
+	const targets = [
+		{ transcript: said, tool: 'claude' },
+		{ transcript: onlyTooling, tool: 'claude' },
+		{ transcript: codex, tool: 'codex' },
+		{ transcript: j(dir, 'gone.jsonl'), tool: 'claude' },
+	];
+
+	const found = await searchTranscripts({ targets, query: 'refresh token' });
+	const paths = found.results.map((r) => r.transcript);
+	check('a transcript that said it is found', paths.includes(said));
+	check('both tools are searched', paths.includes(codex));
+	check('a hit only in tool calls is not a result', !paths.includes(onlyTooling));
+	check('a transcript that is gone is one fewer place to look, not a failure', found.scanned === 4);
+	check('the match is quoted back', found.results.find((r) => r.transcript === said)?.snippet.includes('refresh token'));
+	check('and attributed to who said it', found.results.find((r) => r.transcript === said)?.role === 'user');
+
+	check('case is ignored', (await searchTranscripts({ targets, query: 'REFRESH Token' })).results.length === 2);
+	check('a term nobody used finds nothing', (await searchTranscripts({ targets, query: 'quokka' })).results.length === 0);
+	check('one letter is not a search', (await searchTranscripts({ targets, query: 'r' })).results.length === 0);
+
+	const stopped = new AbortController();
+	stopped.abort();
+	const abandoned = await searchTranscripts({ targets, query: 'refresh token', signal: stopped.signal });
+	check('an abandoned search returns nothing and says it is incomplete', abandoned.results.length === 0 && abandoned.complete === false);
+}
+
 /* -------------------------------------------------------------- the store */
 
 console.log('\naccount store');
