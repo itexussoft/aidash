@@ -15,6 +15,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync, execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseNotes } from '../app/src/notes.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = 'itexussoft/aidash';
@@ -34,6 +35,22 @@ if (dirty) {
 	process.exit(1);
 }
 
+/* -------------------------------------------------------------------- notes */
+
+// The app's own words for what this version brings, read from the section a
+// person maintains by hand. Required rather than defaulted to empty: a release
+// with nothing to say is either a forgotten changelog entry or not worth
+// cutting, and a silent empty banner would not tell you which.
+const changelogPath = join(ROOT, 'CHANGELOG.md');
+const changelog = await readFile(changelogPath, 'utf8');
+const entries = parseNotes(changelog);
+const unreleased = entries.find((entry) => entry.version === 'Unreleased');
+
+if (!unreleased?.bullets.length) {
+	console.error('\nCHANGELOG.md has no "## Unreleased" bullets — add what this version brings before releasing.\n');
+	process.exit(1);
+}
+
 /* ------------------------------------------------------------------ version */
 
 const pkgPath = join(ROOT, 'package.json');
@@ -46,17 +63,29 @@ await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 // derived from it, so this cannot bump the version and leave the links behind.
 const workerPath = join(ROOT, 'worker', 'src', 'index.js');
 const worker = await readFile(workerPath, 'utf8');
-const bumped = worker.replace(/(const VERSION = ')[\d.]+(')/, `$1${requested}$2`);
+let bumped = worker.replace(/(const VERSION = ')[\d.]+(')/, `$1${requested}$2`);
 if (bumped === worker) {
 	console.error('\nCould not find `const VERSION` in worker/src/index.js.\n');
 	process.exit(1);
 }
+bumped = bumped.replace(/const NOTES = \[[^\]]*\];/, `const NOTES = ${JSON.stringify(unreleased.bullets)};`);
+if (!bumped.includes(JSON.stringify(unreleased.bullets))) {
+	console.error('\nCould not find `const NOTES` in worker/src/index.js.\n');
+	process.exit(1);
+}
 await writeFile(workerPath, bumped);
+
+// "Unreleased" becomes this version's own heading, and an empty one is put
+// back above it so the next round of work has somewhere to be written down as
+// it happens, rather than reconstructed from memory at the next release.
+const retitled = changelog.replace('## Unreleased', `## Unreleased\n\n## ${requested}`);
+await writeFile(changelogPath, retitled);
 
 const tag = `v${requested}`;
 say(`version set to ${requested}`);
+say(`${unreleased.bullets.length} release note${unreleased.bullets.length === 1 ? '' : 's'} carried into the manifest`);
 
-run('git', ['add', 'package.json', 'worker/src/index.js']);
+run('git', ['add', 'package.json', 'worker/src/index.js', 'CHANGELOG.md']);
 run('git', ['commit', '-m', `Release ${tag}`]);
 run('git', ['tag', tag]);
 run('git', ['push', 'origin', 'main']);

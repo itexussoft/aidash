@@ -16,6 +16,9 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 - Opens a project on its own: every session, both tools, all accounts, by day
 - Builds a project brief from recent transcripts, to paste under another account
 - Searches every transcript at once, across accounts and both tools
+- Runs a second copy of Claude Desktop per account, signed in side by side
+- Clears a stuck Remote Control link for a whole account, when Desktop's own
+  disconnect fails
 
 ## 0.1.3
 

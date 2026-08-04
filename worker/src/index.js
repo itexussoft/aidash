@@ -24,6 +24,11 @@ const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`
 // a bump cannot leave a download link pointing at the previous version's files.
 const VERSION = '0.1.3';
 
+// Bumped alongside VERSION by `npm run release`, copied from CHANGELOG.md's
+// "Unreleased" section — the app's own words for what this version brought,
+// shown in the update banner and on About without a second copy to keep in step.
+const NOTES = [];
+
 /**
  * Where each platform's installer lives, under the names electron-builder gives
  * them. The Windows one has spaces — "aidash Setup 0.1.0.exe" — and GitHub
@@ -43,7 +48,7 @@ const downloadsFor = (version) => ({
 /** The published release. */
 const RELEASE = {
 	version: VERSION,
-	notes: null,
+	notes: NOTES,
 	url: 'https://aidash.itex.us',
 	repo: REPO,
 	downloads: downloadsFor(VERSION),
