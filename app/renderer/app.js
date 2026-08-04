@@ -107,7 +107,7 @@ function paint() {
             ${escapeHtml(names[group.provider] ?? group.provider)}
             <span class="group-count">${group.items.length}</span>
           </h2>
-          <div class="group-grid" ${collapsed.has(group.provider) ? 'hidden' : ''}>${group.items.map(renderCard).join('')}</div>
+          <div class="group-grid" ${collapsed.has(group.provider) ? 'hidden' : ''}>${group.items.map((a) => renderCard(a, state.availability)).join('')}</div>
         </section>`,
 		)
 		.join('');
@@ -136,6 +136,28 @@ function paint() {
 
 	for (const btn of grid.querySelectorAll('button.rename')) {
 		btn.addEventListener('click', () => openRename(btn.dataset.id, btn.dataset.label));
+	}
+
+	for (const btn of grid.querySelectorAll('button.instance')) {
+		btn.addEventListener('click', async () => {
+			btn.disabled = true;
+			btn.textContent = 'opening…';
+			try {
+				const result = await window.aidash.instances.open(btn.dataset.id);
+				// The first launch is the one worth explaining: it opens signed out,
+				// which looks like a failure if nobody said so.
+				done(
+					result?.first
+						? `Opened a separate instance for ${btn.dataset.label} — sign in there as that account`
+						: `Opened the separate instance for ${btn.dataset.label}`,
+				);
+			} catch (err) {
+				failed(reason(err));
+			} finally {
+				btn.disabled = false;
+				btn.textContent = 'separate instance';
+			}
+		});
 	}
 }
 
@@ -368,11 +390,19 @@ window.aidash.onStateChanged((next) => {
 // cannot become something the user learns to ignore.
 const DISMISSED_KEY = 'aidash:dismissed-update';
 
+const bullets = (lines) => lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+
 async function checkUpdate() {
 	const update = await window.aidash.checkForUpdate();
 	if (!update || localStorage.getItem(DISMISSED_KEY) === update.version) return;
 
-	$('#update-text').textContent = `Version ${update.version} is available${update.notes ? ` — ${update.notes}` : ''}`;
+	$('#update-text').textContent = `Version ${update.version} is available`;
+
+	// The release's own list, when it carries one. A banner that only says a
+	// number asks the user to go and find out what it is for.
+	const notes = update.notes ?? [];
+	$('#update-notes').innerHTML = bullets(notes);
+	$('#update-notes').hidden = notes.length === 0;
 	$('#update-download').onclick = () => window.aidash.openUrl(update.downloadUrl);
 	$('#update-dismiss').onclick = () => {
 		localStorage.setItem(DISMISSED_KEY, update.version);
@@ -425,6 +455,42 @@ checkUpdate();
 
 $('#about-version').textContent = state.version ?? '—';
 $('#about-platform').textContent = `${navigator.platform || 'unknown platform'}`;
+
+/**
+ * What this build brought, from the changelog shipped beside it.
+ *
+ * The version in hand first and named, older ones folded away: after an update
+ * the question is "what did I just get", and it should not need unfolding.
+ */
+async function paintNotes() {
+	const box = $('#about-notes');
+	const entries = await window.aidash.releaseNotes();
+	if (!entries.length) {
+		box.innerHTML = '<p class="hint">No release notes shipped with this build.</p>';
+		return;
+	}
+
+	// An unreleased section exists while the next version is being built; running
+	// such a build, it is the honest answer to "what is in this one".
+	const current = entries.find((e) => e.version === state.version) ?? entries[0];
+	const rest = entries.filter((e) => e !== current);
+
+	box.innerHTML = `
+    <div class="notes-current">
+      <b>${escapeHtml(current.version === state.version ? `Version ${current.version}` : current.version)}</b>
+      <ul>${bullets(current.bullets)}</ul>
+    </div>
+    ${
+			rest.length
+				? `<details class="notes-earlier">
+             <summary>Earlier versions</summary>
+             ${rest.map((e) => `<div class="notes-past"><b>${escapeHtml(e.version)}</b><ul>${bullets(e.bullets)}</ul></div>`).join('')}
+           </details>`
+				: ''
+		}`;
+}
+
+paintNotes();
 
 for (const link of document.querySelectorAll('.about-links .link[data-url]')) {
 	link.addEventListener('click', () => window.aidash.openUrl(link.dataset.url));

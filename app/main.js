@@ -18,9 +18,12 @@ import {
 	adoptSession,
 	renameSession,
 	deleteSession,
+	mergeIndexRoot,
+	listIndexAccounts,
 	importConversation as importIntoClaude,
 	CODEX,
 } from './src/sessions.js';
+import { openInstance, readIndexRoot } from './src/instances.js';
 import {
 	renameSession as renameCodexSession,
 	deleteSession as deleteCodexSession,
@@ -35,8 +38,9 @@ import { buildDigest, digestMarkdown } from './src/digest.js';
 import { searchTranscripts } from './src/search.js';
 import { DEFAULT_CONFIG_DIR } from './src/claude-config.js';
 import { identifyRoot } from './src/sessions.js';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { checkForUpdate } from './src/updates.js';
+import { readNotes } from './src/notes.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -227,6 +231,14 @@ ipcMain.handle('state:get', () => fullState());
 
 ipcMain.handle('updates:check', () => checkForUpdate(app.getVersion()));
 
+/**
+ * The shipped changelog.
+ *
+ * Read from beside the app rather than fetched, so what the About tab says
+ * about this build cannot disagree with the build, and says it offline.
+ */
+ipcMain.handle('notes:get', () => readNotes(join(here, '..', 'CHANGELOG.md')));
+
 ipcMain.handle('settings:set', (_event, { key, value }) => applySetting(key, value));
 
 ipcMain.handle('accounts:refresh', async () => {
@@ -328,7 +340,105 @@ function withBridgeState(view) {
 	return view;
 }
 
-const scan = async () => withBridgeState(await scanEverything(configDirs()));
+const scan = async () => withBridgeState(await scanEverything(configDirs(), DEFAULT_CODEX_HOME, await store.indexRoots()));
+
+/* ----------------------------------------------------- separate instances */
+
+/**
+ * Opens an account's own copy of Claude Desktop, creating its profile on first
+ * use. The directory being there is what makes the instance exist, so this is
+ * also what registers it — see AccountStore.indexRoots().
+ */
+ipcMain.handle('instances:open', async (_event, accountId) => {
+	const account = store.state.accounts.find((a) => a.id === accountId);
+	if (!account) throw new Error('no such account');
+	if (account.provider !== 'claude') throw new Error('separate instances are a Claude Desktop feature');
+
+	const dir = store.instanceDirFor(accountId);
+	const first = !(await store.hasInstance(accountId));
+	await mkdir(dir, { recursive: true });
+
+	openInstance(dir);
+	return { first, dir, view: await scan() };
+});
+
+/** How many entries a root holds, for a confirmation that can be specific. */
+async function countEntries(root) {
+	let entries = 0;
+	for (const account of await listIndexAccounts([root])) {
+		entries += (await readdir(account.path)).filter((f) => f.endsWith('.json')).length;
+	}
+	return entries;
+}
+
+/**
+ * Folds a secondary index into the main profile and retires it.
+ *
+ * One gesture, because the two halves are not separately useful: an emptied
+ * instance is a signed-in copy of the app with nothing in it, and a merge that
+ * left it standing would refill it the next time it was opened.
+ *
+ * What "retire" means differs by where the folder came from, and the
+ * confirmation says which: an instance this app created is deleted, while a
+ * folder someone pointed at by hand is only forgotten. Deleting a directory the
+ * app did not create is not ours to do.
+ */
+ipcMain.handle('instances:merge', async (_event, rootId) => {
+	const root = (await store.indexRoots()).find((r) => r.id === rootId);
+	if (!root) throw new Error('no such folder');
+	if (root.kind === 'main') throw new Error('this is the main profile — there is nothing to merge it into');
+
+	const entries = await countEntries(root);
+	const owned = root.kind === 'instance';
+
+	const { response } = await dialog.showMessageBox(mainWindow, {
+		type: 'warning',
+		buttons: ['Merge and remove', 'Cancel'],
+		defaultId: 1,
+		cancelId: 1,
+		message: `Merge "${root.label ?? rootId}" into the main profile?`,
+		detail:
+			`${entries} session${entries === 1 ? '' : 's'} move into the main Claude Desktop profile, under the same account. ` +
+			'They appear there once it is signed in as that account. Transcripts are shared and are not touched. ' +
+			(owned
+				? 'This separate instance is then deleted, so opening one for this account again starts from a fresh sign-in. Quit that copy first.'
+				: 'This folder is then forgotten by aidash. Nothing on disk is deleted.'),
+	});
+	if (response !== 0) return null;
+
+	const { moved, skipped, carried } = await mergeIndexRoot({ from: root });
+
+	// Same note a single move leaves, for the same reason: afterwards nothing on
+	// disk says which profile a Remote Control link was minted in.
+	for (const note of carried) await journal.record(note);
+
+	if (owned) await rm(root.profile, { recursive: true, force: true });
+	else await store.removeSessionRoot(root.id);
+
+	return { moved, skipped, owned, view: await scan() };
+});
+
+/* ----------------------------------------------------------- extra folders */
+
+ipcMain.handle('roots:add', async () => {
+	const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+		title: 'Choose a Claude Desktop profile',
+		message: 'Pick the user data folder of another copy of Claude Desktop, or the claude-code-sessions folder inside it',
+		properties: ['openDirectory'],
+	});
+	if (canceled || !filePaths[0]) return null;
+
+	const found = await readIndexRoot(filePaths[0]);
+	if (!found) throw new Error('there is no Claude Desktop session index in that folder');
+
+	await store.addSessionRoot({ ...found, label: null });
+	return { view: await scan() };
+});
+
+ipcMain.handle('roots:forget', async (_event, id) => {
+	await store.removeSessionRoot(id);
+	return { view: await scan() };
+});
 
 ipcMain.handle('sessions:scan', () => scan());
 

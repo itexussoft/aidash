@@ -26,7 +26,11 @@
 		</header>
 
 		<div id="update-banner" class="update-banner" hidden>
-			<span id="update-text"></span>
+			<div class="ub-body">
+				<span id="update-text"></span>
+				<!-- What the new version brings, as the release itself lists it. -->
+				<ul id="update-notes" class="ub-notes" hidden></ul>
+			</div>
 			<button id="update-download" class="primary">Download</button>
 			<button id="update-dismiss" title="Dismiss">×</button>
 		</div>
@@ -104,6 +108,13 @@
 				see it. Restart Claude Code to pick up the change.
 			</p>
 			<p class="lede">
+				A <strong>separate instance</strong> — opened from a Claude account on the Usage tab — is a second copy of Claude
+				Desktop with its own user data folder, running beside your main one. It keeps its own index, so it gets its own
+				columns here, drawn faintly and badged. Nothing else is split: every instance shares <code>~/.claude</code>, which is
+				what keeps a move between columns the move of one small file rather than a copy of a transcript.
+				<strong>Merge and remove</strong> on a folder above folds its sessions back into the main profile and retires it.
+			</p>
+			<p class="lede">
 				The <strong>terminal CLI</strong> ignores this index entirely: it lists whatever sits in its own config directory, for
 				whoever is signed in. Sessions started there can therefore be missing from the desktop app altogether — those appear
 				under <strong>Only in the CLI</strong>, and dragging one onto an account makes the desktop app list it too.
@@ -123,7 +134,7 @@
 			<section id="sessions-empty" class="empty" hidden>
 				<h2>No sessions found</h2>
 				<p>Claude Code has not recorded any sessions on this machine yet.</p>
-				<p class="hint">Accounts are read from Claude Code's own session index. Add a config folder above if an account here is showing as an unnamed id.</p>
+				<p class="hint">Accounts are read from Claude Code's own session index. Use <b>+ folder</b> above to add another copy of Claude Desktop's user data folder if its sessions are missing here.</p>
 			</section>
 		</section>
 
@@ -223,6 +234,9 @@
 					<button class="link" data-url="https://github.com/itexussoft/aidash/releases">Releases</button>
 					<button class="link" id="about-check">Check for updates</button>
 				</div>
+
+				<h3 class="about-h">What's new</h3>
+				<div id="about-notes" class="notes"></div>
 
 				<h3 class="about-h">Disclaimer</h3>
 				<div class="about-legal">

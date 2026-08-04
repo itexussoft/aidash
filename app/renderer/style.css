@@ -408,7 +408,9 @@ button.ghost:hover:not(:disabled) {
 	border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
 	border-radius: var(--radius);
 	padding: var(--step-2) var(--step-3);
-	margin-bottom: var(--step-4);
+	/* Inset a step further than the page gutter, so the bubble reads as a
+	   floating card rather than a bar spanning the full window width. */
+	margin: 0 var(--step-4) var(--step-4);
 	font-size: 13px;
 }
 #update-text {
@@ -418,6 +420,49 @@ button.ghost:hover:not(:disabled) {
 	font-size: 15px;
 	line-height: 1;
 	padding: 0 var(--step-1);
+}
+
+/* ------------------------------------------------------- release notes */
+
+/* The banner carries the list, not just the number: a version on its own asks
+   the user to go elsewhere to find out what it is for. */
+.ub-body {
+	flex: 1;
+	min-width: 0;
+}
+.ub-notes {
+	margin: var(--step-1) 0 0;
+	padding-left: 1.1em;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--muted);
+}
+
+.notes ul {
+	margin: var(--step-1) 0 0;
+	padding-left: 1.1em;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--muted);
+}
+.notes-current > b {
+	font-size: 13px;
+}
+/* Folded away on purpose: after an update the question is what you just got. */
+.notes-earlier {
+	margin-top: var(--step-4);
+}
+.notes-earlier summary {
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--faint);
+}
+.notes-past {
+	margin-top: var(--step-3);
+}
+.notes-past > b {
+	font-size: 12px;
+	color: var(--faint);
 }
 
 /* -------------------------------------------------------------- search */
@@ -1084,6 +1129,9 @@ button.ghost:hover:not(:disabled) {
 button.remove:hover {
 	color: var(--crit);
 }
+button.instance:hover {
+	color: var(--accent);
+}
 
 details {
 	position: relative;
@@ -1258,6 +1306,42 @@ dialog menu {
 	color: var(--warn);
 	border-color: color-mix(in srgb, var(--warn) 35%, var(--line));
 }
+/* One chip per extra folder rather than per account inside it: the folder is
+   what can be merged away, so it is what carries the button. */
+.root-chip.secondary {
+	border-style: dashed;
+	background: transparent;
+}
+.rc-kind {
+	font-size: 9.5px;
+	font-weight: 650;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+.rc-merge {
+	font-size: 10.5px;
+	line-height: 1;
+	padding: 3px 6px;
+	border-radius: 99px;
+	color: var(--faint);
+}
+.rc-merge:hover {
+	color: var(--fg);
+	background: var(--track);
+}
+.rc-add {
+	font-size: 11.5px;
+	line-height: 1;
+	padding: 4px 10px;
+	border: 1px dashed var(--line);
+	border-radius: 99px;
+	color: var(--faint);
+}
+.rc-add:hover {
+	color: var(--fg);
+	border-color: color-mix(in srgb, var(--fg) 30%, var(--line));
+}
 
 .project {
 	margin-bottom: var(--step-6);
@@ -1297,6 +1381,19 @@ dialog menu {
 }
 .col.codex {
 	border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+}
+/* A listing that lives in a second copy of the desktop app rather than the one
+   everybody has. It takes exactly the same drags, so the difference is stated
+   quietly rather than fenced off — and stated before .over, so a column being
+   dragged onto still turns green rather than staying faint. */
+.col.secondary {
+	background: transparent;
+	border-color: color-mix(in srgb, var(--line) 55%, transparent);
+	box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.col.secondary .col-who b {
+	font-weight: 500;
+	color: var(--muted);
 }
 .col.over {
 	border-color: var(--ok);
@@ -1339,6 +1436,23 @@ dialog menu {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 10.5px;
 	color: var(--faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* Which copy of the desktop app a column belongs to. Carried on every secondary
+   column, because the same account can appear in two and a badge that only
+   showed on one would leave you guessing which. */
+.col-tag {
+	align-self: flex-start;
+	max-width: 100%;
+	font-size: 10px;
+	letter-spacing: 0.02em;
+	color: var(--faint);
+	border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+	border-radius: 99px;
+	padding: 0 6px;
+	margin: 2px 0 1px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;

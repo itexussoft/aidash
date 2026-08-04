@@ -180,6 +180,12 @@ function columns() {
 			expired: account.expired,
 			name: accountName(account),
 			under: account.orgName ?? account.orgUuid,
+			// A listing that belongs to a second copy of the desktop app rather than
+			// the one everybody has. It behaves identically — the difference is worth
+			// showing, not enforcing.
+			secondary: Boolean(account.secondary),
+			rootKind: account.rootKind ?? 'main',
+			rootLabel: account.rootLabel ?? null,
 		});
 	}
 
@@ -305,12 +311,25 @@ function projectRow(project) {
 							: ''
 						: '<span class="col-stale">add this account on the Usage tab to name it</span>';
 
+			// Which copy of the desktop app this listing lives in. Only said where it
+			// is not the obvious one, and said on every column rather than only on
+			// duplicates: the same account can appear twice, and a badge that came
+			// and went would leave you working out which of the two is which.
+			const where = column.secondary
+				? `<span class="col-tag" title="${escapeHtml(
+						column.rootKind === 'instance'
+							? 'A separate copy of Claude Desktop for this account, with its own list of sessions. Transcripts and settings are shared with the main one.'
+							: 'A Claude Desktop profile folder added by hand. Its sessions are listed here the same as any other.',
+					)}">${escapeHtml(column.rootKind === 'instance' ? `instance · ${column.rootLabel ?? ''}`.trim() : 'added folder')}</span>`
+				: '';
+
 			return `
-        <div class="col ${column.orphan ? 'orphan' : ''} ${column.tool === CODEX ? 'codex' : ''}"
+        <div class="col ${column.orphan ? 'orphan' : ''} ${column.tool === CODEX ? 'codex' : ''} ${column.secondary ? 'secondary' : ''}"
              data-account="${escapeHtml(column.id)}" data-tool="${escapeHtml(column.tool)}" data-cwd="${escapeHtml(project.cwd)}">
           <div class="col-head">
             <span class="col-who">
               <b class="${column.orphan || (column.tool === 'claude' && !column.email) ? 'unknown' : ''}">${escapeHtml(column.name)}</b>
+              ${where}
               <span class="col-path">${escapeHtml(column.under)}</span>
               ${note}
             </span>
@@ -333,16 +352,94 @@ function projectRow(project) {
     </section>`;
 }
 
-export function paintSessions() {
-	rootsBox.innerHTML = [
-		...view.accounts.map(
+/**
+ * The strip above the projects: what is being read, and what can be folded away.
+ *
+ * Accounts in the main profile get a chip each. A secondary folder gets one chip
+ * for the folder rather than one per account inside it, because the folder is
+ * the thing that can be merged and retired — and a freshly opened instance with
+ * nothing in it yet still earns a chip, so that "I made one" and "it is empty"
+ * are distinguishable.
+ */
+function rootChips() {
+	const sessionsIn = (rootId) =>
+		view.accounts.filter((a) => (a.root ?? 'main') === rootId).reduce((n, a) => n + (a.sessions ?? 0), 0);
+
+	const counted = (n) => `${n} session${n === 1 ? '' : 's'}`;
+
+	const chips = view.accounts
+		.filter((account) => !account.secondary)
+		.map(
 			(account) => `
         <span class="root-chip ${account.expired ? 'stale' : ''}">
-          ${escapeHtml(accountName(account))} · ${escapeHtml(String(account.sessions))} sessions
+          ${escapeHtml(accountName(account))} · ${escapeHtml(counted(account.sessions))}
         </span>`,
-		),
-		view.codex ? `<span class="root-chip">Codex · ${escapeHtml(String(view.codex.sessions))} sessions</span>` : '',
-	].join('');
+		);
+
+	for (const root of (view.indexRoots ?? []).filter((r) => r.kind !== 'main')) {
+		const count = sessionsIn(root.id);
+		chips.push(`
+      <span class="root-chip secondary" data-root="${escapeHtml(root.id)}">
+        <b class="rc-kind">${escapeHtml(root.kind === 'instance' ? 'instance' : 'folder')}</b>
+        ${escapeHtml(root.label ?? root.id)} · ${escapeHtml(counted(count))}
+        <button class="rc-merge" data-root="${escapeHtml(root.id)}"
+          title="${escapeHtml(
+						root.kind === 'instance'
+							? 'Moves every session here into the main profile under the same account, then deletes this separate instance. Transcripts are untouched. Quit that copy of Claude Desktop first.'
+							: 'Moves every session here into the main profile under the same account, then forgets this folder. Nothing on disk is deleted.',
+					)}">merge and remove</button>
+      </span>`);
+	}
+
+	if (view.codex) chips.push(`<span class="root-chip">Codex · ${escapeHtml(String(view.codex.sessions))} sessions</span>`);
+
+	chips.push(
+		`<button id="roots-add" class="rc-add" title="Point at another copy of Claude Desktop's user data folder — one this app did not create — to list its sessions here too.">+ folder</button>`,
+	);
+
+	return chips.join('');
+}
+
+function wireRoots() {
+	for (const button of rootsBox.querySelectorAll('.rc-merge')) {
+		button.addEventListener('click', async () => {
+			busy('Merging…');
+			try {
+				// The confirmation lives in the main process, where it can be a real
+				// system dialog and can say how many sessions it is about to move.
+				const result = await window.aidash.instances.merge(button.dataset.root);
+				if (!result) return notifyNothing();
+
+				view = result.view;
+				paintSessions();
+
+				const skipped = result.skipped.length;
+				done(
+					`Merged ${result.moved} session${result.moved === 1 ? '' : 's'}` +
+						(skipped ? ` · ${skipped} left where they were, already listed there` : ''),
+				);
+			} catch (err) {
+				failed(reason(err));
+			}
+		});
+	}
+
+	rootsBox.querySelector('#roots-add')?.addEventListener('click', async () => {
+		try {
+			const result = await window.aidash.instances.addRoot();
+			if (!result) return notifyNothing();
+			view = result.view;
+			paintSessions();
+			done('Folder added');
+		} catch (err) {
+			failed(reason(err));
+		}
+	});
+}
+
+export function paintSessions() {
+	rootsBox.innerHTML = rootChips();
+	wireRoots();
 
 	const shown = visibleProjects();
 	const hasSessions = shown.length > 0;

@@ -11,11 +11,19 @@
  * break whenever either side changes shape.
  */
 
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm, access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { codex } from './providers/codex.js';
 import { claude } from './providers/claude.js';
-import { DEFAULT_ROOT } from './sessions.js';
+import { DEFAULT_ROOT, MAIN_ROOT } from './sessions.js';
+import { findDesktop, indexIn, instanceDirIn } from './instances.js';
+
+const exists = (p) =>
+	access(p).then(
+		() => true,
+		() => false,
+	);
 
 export const PROVIDERS = { codex, claude };
 
@@ -33,7 +41,11 @@ export class AccountStore {
 	constructor(userDataDir) {
 		this.file = join(userDataDir, 'accounts.json');
 		this.accountsDir = join(userDataDir, 'accounts');
-		this.state = { accounts: [], lastRefreshAt: null, settings: { ...DEFAULT_SETTINGS } };
+		// Beside the credential directories rather than inside them: this holds a
+		// whole second copy of Claude Desktop's user data, which has no business
+		// sitting in a folder Claude Code treats as its own.
+		this.instancesDir = join(userDataDir, 'instances');
+		this.state = { accounts: [], lastRefreshAt: null, sessionRoots: [], settings: { ...DEFAULT_SETTINGS } };
 	}
 
 	async load() {
@@ -42,12 +54,16 @@ export class AccountStore {
 			this.state = {
 				accounts: raw.accounts ?? [],
 				lastRefreshAt: raw.lastRefreshAt ?? null,
+				// Only folders pointed at by hand. The ones belonging to accounts are
+				// derived from the disk in indexRoots(), so there is no second record
+				// of them to fall out of step.
+				sessionRoots: raw.sessionRoots ?? [],
 				// Spread over the defaults rather than replacing them, so a setting
 				// added in a later version arrives switched on rather than undefined.
 				settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
 			};
 		} catch {
-			this.state = { accounts: [], lastRefreshAt: null, settings: { ...DEFAULT_SETTINGS } };
+			this.state = { accounts: [], lastRefreshAt: null, sessionRoots: [], settings: { ...DEFAULT_SETTINGS } };
 		}
 
 		await mkdir(this.accountsDir, { recursive: true });
@@ -123,6 +139,87 @@ export class AccountStore {
 	}
 
 	/**
+	 * Where an account's own copy of Claude Desktop keeps its user data.
+	 *
+	 * Named from the account id rather than recorded anywhere, which is what
+	 * limits an account to one instance: the path is a function of the account,
+	 * so there is no second name to allocate and no counter to disagree with.
+	 * The id survives renaming for exactly this reason.
+	 */
+	instanceDirFor(id) {
+		return instanceDirIn(this.instancesDir, id);
+	}
+
+	/** Whether that copy has been created. The directory is the whole record. */
+	hasInstance(id) {
+		return exists(this.instanceDirFor(id));
+	}
+
+	/**
+	 * Every session index worth reading, main profile first.
+	 *
+	 * Three kinds, and the distinction is not cosmetic: the main one is where
+	 * things are folded back to, an instance belongs to an account and dies with
+	 * it, and a folder pointed at by hand is only ever remembered — forgetting it
+	 * must leave whatever it names untouched.
+	 */
+	async indexRoots() {
+		const roots = [MAIN_ROOT];
+
+		for (const account of this.state.accounts) {
+			if (account.provider !== 'claude') continue;
+			if (!(await this.hasInstance(account.id))) continue;
+			roots.push({
+				id: `instance:${account.id}`,
+				path: indexIn(this.instanceDirFor(account.id)),
+				kind: 'instance',
+				label: account.label,
+				accountId: account.id,
+				profile: this.instanceDirFor(account.id),
+			});
+		}
+
+		for (const extra of this.state.sessionRoots) {
+			roots.push({ id: extra.id, path: extra.path, kind: 'manual', label: extra.label, profile: extra.profile ?? null });
+		}
+
+		// One folder reaching this list twice — most easily by being pointed at by
+		// hand before the account that owns it grew an instance — would become two
+		// columns over one directory, offering a move that does nothing.
+		const seen = new Set();
+		return roots.filter((root) => {
+			if (seen.has(root.path)) return false;
+			seen.add(root.path);
+			return true;
+		});
+	}
+
+	/**
+	 * Remembers a folder the app did not create.
+	 *
+	 * `profile` is the directory the user actually chose and `path` the index
+	 * inside it; both are kept because merging reads the index while retiring the
+	 * folder means the profile, and guessing one from the other later would be
+	 * guessing about a path someone typed.
+	 */
+	async addSessionRoot({ path, profile, label }) {
+		const roots = await this.indexRoots();
+		if (roots.some((r) => r.path === path)) throw new Error('that folder is already listed');
+
+		const id = `manual-${Date.now().toString(36)}`;
+		this.state.sessionRoots.push({ id, path, profile: profile ?? null, label: label || (profile ?? path).replace(homedir(), '~') });
+		await this.save();
+		return id;
+	}
+
+	/** Forgets a hand-picked folder. Nothing on disk is touched. */
+	async removeSessionRoot(id) {
+		if (!id?.startsWith('manual-')) throw new Error('this folder belongs to an account and is removed with it');
+		this.state.sessionRoots = this.state.sessionRoots.filter((r) => r.id !== id);
+		await this.save();
+	}
+
+	/**
 	 * Signs in and registers the account.
 	 *
 	 * Nothing is written to the registry until the sign-in succeeds, so an
@@ -195,6 +292,11 @@ export class AccountStore {
 			await deleteClaudeCredentials(this.dirFor(id));
 		}
 		await rm(this.dirFor(id), { recursive: true, force: true });
+		// The instance is this account's second copy of Claude Desktop; leaving it
+		// would leave a signed-in window for an account the user just deleted.
+		// Its sessions are not lost with it — the transcripts are shared, so they
+		// reappear as unclaimed and can be adopted again.
+		await rm(this.instanceDirFor(id), { recursive: true, force: true });
 	}
 
 	/**
@@ -228,6 +330,9 @@ export class AccountStore {
 		return {
 			codex: Boolean(codex.findBinary()),
 			claude: Boolean(claude.findBinary()),
+			// A separate instance is a second copy of the desktop app, so the button
+			// offering one has to know whether there is a first.
+			claudeDesktop: Boolean(findDesktop()),
 		};
 	}
 }

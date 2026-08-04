@@ -48,6 +48,20 @@ export const DEFAULT_ROOT = DEFAULT_CONFIG_DIR;
 /** Where the desktop app keeps the index that decides what it shows. */
 export const INDEX_ROOT = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
 
+/**
+ * The index belonging to the copy of Claude Desktop everyone already has.
+ *
+ * There can now be more than one — a second copy pointed at its own user data
+ * directory keeps its own index, and each of those is another place a session
+ * can be listed. They are described as roots rather than paths because a column
+ * has to say which one it came from; see `listIndexAccounts`.
+ */
+export const MAIN_ROOT = { id: 'main', path: INDEX_ROOT, kind: 'main', label: 'Claude Desktop' };
+
+/** Accepts a bare path, one root, or several, and always yields several. */
+const asRoots = (roots) =>
+	(Array.isArray(roots) ? roots : [roots]).map((root) => (typeof root === 'string' ? { ...MAIN_ROOT, path: root } : root));
+
 const TRANSCRIPTS = join(DEFAULT_CONFIG_DIR, 'projects');
 
 // Enough for the session header; `ai-title` lands within the first few tens of
@@ -117,22 +131,43 @@ async function nameAccounts(configDirs) {
 
 /* ----------------------------------------------------------------- index */
 
-/** Every account/organisation pair the desktop app has recorded sessions for. */
-export async function listIndexAccounts(indexRoot = INDEX_ROOT) {
-	if (!(await exists(indexRoot))) return [];
-
+/**
+ * Every account/organisation pair any known index has recorded sessions for.
+ *
+ * One index means one column per account. Several mean the same account can
+ * appear more than once — once per copy of Claude Desktop that has listed it —
+ * which is the point: those are genuinely separate listings of a shared pile of
+ * transcripts, and a session moves between them exactly as it moves between
+ * accounts.
+ *
+ * The main profile's column ids are left byte-for-byte as they were. They are
+ * what the bridge journal recorded its attributions against, and prefixing them
+ * "for consistency" would orphan every attribution ever made.
+ */
+export async function listIndexAccounts(roots = [MAIN_ROOT]) {
 	const accounts = [];
-	for (const account of await readdir(indexRoot, { withFileTypes: true })) {
-		if (!account.isDirectory()) continue;
-		const accountDir = join(indexRoot, account.name);
-		for (const org of await readdir(accountDir, { withFileTypes: true })) {
-			if (!org.isDirectory()) continue;
-			accounts.push({
-				id: `${account.name}/${org.name}`,
-				accountUuid: account.name,
-				orgUuid: org.name,
-				path: join(accountDir, org.name),
-			});
+
+	for (const root of asRoots(roots)) {
+		if (!(await exists(root.path))) continue;
+
+		for (const account of await readdir(root.path, { withFileTypes: true })) {
+			if (!account.isDirectory()) continue;
+			const accountDir = join(root.path, account.name);
+			for (const org of await readdir(accountDir, { withFileTypes: true })) {
+				if (!org.isDirectory()) continue;
+				const secondary = root.kind !== 'main';
+				accounts.push({
+					id: secondary ? `${root.id}:${account.name}/${org.name}` : `${account.name}/${org.name}`,
+					accountUuid: account.name,
+					orgUuid: org.name,
+					path: join(accountDir, org.name),
+					root: root.id,
+					rootPath: root.path,
+					rootKind: root.kind ?? 'main',
+					rootLabel: root.label ?? null,
+					secondary,
+				});
+			}
 		}
 	}
 	return accounts;
@@ -454,8 +489,8 @@ export async function importConversation(toAccountPath, { title, cwd, messages, 
  * Grouped by project because that is the rule made visible — a session belongs
  * to the directory it ran in, so it only ever moves sideways within its row.
  */
-export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = INDEX_ROOT, transcriptsRoot = TRANSCRIPTS) {
-	const [indexAccounts, namesByOrg] = await Promise.all([listIndexAccounts(indexRoot), nameAccounts(configDirs)]);
+export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoots = [MAIN_ROOT], transcriptsRoot = TRANSCRIPTS) {
+	const [indexAccounts, namesByOrg] = await Promise.all([listIndexAccounts(indexRoots), nameAccounts(configDirs)]);
 
 	const byProject = new Map();
 
@@ -561,12 +596,12 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 
 	const unindexed = projects.reduce((n, p) => n + (p.byAccount[UNINDEXED]?.length ?? 0), 0);
 
-	return { accounts, projects, indexRoot, unindexed };
+	return { accounts, projects, indexRoots: asRoots(indexRoots), unindexed };
 }
 
 /** Everything, with Codex folded in as its own column. */
-export async function scanEverything(configDirs = [DEFAULT_CONFIG_DIR], codexHome = DEFAULT_CODEX_HOME) {
-	const view = await scanAll(configDirs);
+export async function scanEverything(configDirs = [DEFAULT_CONFIG_DIR], codexHome = DEFAULT_CODEX_HOME, indexRoots = [MAIN_ROOT]) {
+	const view = await scanAll(configDirs, indexRoots);
 	const byProject = new Map(view.projects.map((p) => [p.cwd, p]));
 
 	let codexCount = 0;
@@ -625,4 +660,96 @@ export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
 	}
 
 	return { moved: cliSessionId, to: toAccountPath, bridges };
+}
+
+/**
+ * Folds one index into another, entry by entry.
+ *
+ * This is the bulk form of the drag that already moves a single session, and it
+ * exists because retiring an instance any other way loses things. Deleting the
+ * profile would not lose conversations — the transcripts are shared, so they
+ * would simply reappear as unclaimed and could be adopted again — but adoption
+ * rebuilds an entry from the transcript, and the transcript never held
+ * `isArchived`, a title the user typed, `lastFocusedAt`, or the Remote Control
+ * links. Moving the file keeps all of it.
+ *
+ * Entries land under the same account uuid they were already filed under, since
+ * that uuid is the account rather than the profile. They therefore become
+ * visible in the destination when it is signed in as that account, which is not
+ * necessarily the moment this returns.
+ *
+ * A duplicate is skipped rather than thrown on. One entry refusing to move is a
+ * fact worth reporting; it is not a reason to abandon the other fifty
+ * half-merged.
+ */
+export async function mergeIndexRoot({ from, toPath = INDEX_ROOT }) {
+	if (!(await exists(from.path))) throw new Error('that profile has no session index to merge');
+
+	let moved = 0;
+	const skipped = [];
+	const carried = [];
+
+	for (const account of await readdir(from.path, { withFileTypes: true })) {
+		if (!account.isDirectory()) continue;
+
+		for (const org of await readdir(join(from.path, account.name), { withFileTypes: true })) {
+			if (!org.isDirectory()) continue;
+
+			const sourceDir = join(from.path, account.name, org.name);
+			const targetDir = join(toPath, account.name, org.name);
+			await mkdir(targetDir, { recursive: true });
+
+			// Built once. The single-session move re-reads the whole destination for
+			// every entry it checks, which is the right trade for one file and the
+			// wrong one for a hundred.
+			const taken = new Set();
+			for (const file of (await readdir(targetDir)).filter((f) => f.endsWith('.json'))) {
+				const entry = await readEntry(join(targetDir, file));
+				if (entry?.cliSessionId) taken.add(entry.cliSessionId);
+			}
+
+			const fromAccount = `${from.id}:${account.name}/${org.name}`;
+
+			for (const file of (await readdir(sourceDir)).filter((f) => f.endsWith('.json'))) {
+				const source = join(sourceDir, file);
+				const entry = await readEntry(source);
+				if (!entry) {
+					skipped.push({ file, why: 'unreadable' });
+					continue;
+				}
+				if (taken.has(entry.cliSessionId)) {
+					skipped.push({ file, title: entry.title ?? null, why: 'already listed there' });
+					continue;
+				}
+
+				const target = join(targetDir, file);
+				// Names are uuid-based, so a clash here means the same entry under a
+				// different conversation — vanishingly unlikely, and not worth
+				// inventing a new name for on the desktop app's behalf.
+				if (await exists(target)) {
+					skipped.push({ file, title: entry.title ?? null, why: 'a file of that name is already there' });
+					continue;
+				}
+
+				try {
+					await rename(source, target);
+				} catch (err) {
+					if (err.code !== 'EXDEV') throw err;
+					await copyFile(source, target);
+					await rm(source, { force: true });
+				}
+
+				taken.add(entry.cliSessionId);
+				moved++;
+
+				// The links move with the entry, so the journal needs the same note it
+				// gets from a single move — otherwise the badge would go on claiming
+				// they live in a profile that no longer exists.
+				const bridges = Array.isArray(entry.bridgeSessionIds) ? entry.bridgeSessionIds : [];
+				if (bridges.length) carried.push({ cliSessionId: entry.cliSessionId, bridges, fromAccount });
+			}
+		}
+	}
+
+	return { moved, skipped, carried };
 }

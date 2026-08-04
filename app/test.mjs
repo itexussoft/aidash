@@ -904,5 +904,93 @@ check('an npm .cmd shim goes through a shell', shim.options.shell === true);
 check('and is quoted, so a space in the home directory survives', shim.command.startsWith('"') && shim.command.endsWith('"'));
 check('a .cmd is only special on Windows', spawnable('/opt/claude.cmd', 'darwin').options.shell === undefined);
 
+console.log('\nseparate instances');
+{
+	const { listIndexAccounts, mergeIndexRoot, MAIN_ROOT } = await import('./src/sessions.js');
+	const { instanceDirIn, indexIn, findDesktop, readIndexRoot } = await import('./src/instances.js');
+	const { AccountStore } = await import('./src/accounts.js');
+	const { mkdtemp, mkdir, writeFile, readdir } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const { join } = await import('node:path');
+
+	const rejects = async (fn) => {
+		try {
+			await fn();
+			return '';
+		} catch (err) {
+			return err.message;
+		}
+	};
+
+	// The profile path is a function of the account id and nothing else. That is
+	// what limits an account to one instance: there is no second name to hand out
+	// and no counter that could disagree with what is on disk.
+	check('an instance folder is named from the account id', instanceDirIn('/data/instances', 'claude-work') === join('/data/instances', 'claude-work'));
+	check('the same account always lands on the same folder', instanceDirIn('/d', 'claude-work') === instanceDirIn('/d', 'claude-work'));
+	check('two accounts never share one', instanceDirIn('/d', 'claude-work') !== instanceDirIn('/d', 'claude-personal'));
+	check('the session index sits inside the profile', indexIn(join('/d', 'claude-work')) === join('/d', 'claude-work', 'claude-code-sessions'));
+	// Anthropic ships no Linux desktop build, so there is nothing to offer there
+	// and nothing to pretend about.
+	check('no desktop app is claimed on Linux', findDesktop('linux') === null);
+
+	const root = await mkdtemp(join(tmpdir(), 'aidash-inst-'));
+	const main = join(root, 'main');
+	const profile = join(root, 'instances', 'claude-work');
+	const inst = indexIn(profile);
+
+	const mainA = join(main, 'account-a', 'org-a');
+	const instA = join(inst, 'account-a', 'org-a');
+	await mkdir(mainA, { recursive: true });
+	await mkdir(instA, { recursive: true });
+
+	const entry = (over) => JSON.stringify({ sessionId: 'local_1', cliSessionId: 'cli-1', cwd: '/w', title: 'One', ...over });
+	await writeFile(join(mainA, 'local_1.json'), entry());
+	await writeFile(join(instA, 'local_2.json'), entry({ sessionId: 'local_2', cliSessionId: 'cli-2', title: 'Two', bridgeSessionIds: ['b-1'] }));
+	// The same conversation listed by both profiles. Legitimate rather than
+	// corrupt: the transcripts are shared, so both can have filed it.
+	await writeFile(join(instA, 'local_3.json'), entry({ sessionId: 'local_3', cliSessionId: 'cli-1', title: 'One again' }));
+
+	const instRoot = { id: 'instance:claude-work', path: inst, kind: 'instance', label: 'Work', profile };
+	const listed = await listIndexAccounts([{ ...MAIN_ROOT, path: main }, instRoot]);
+
+	check('both profiles contribute a column', listed.length === 2);
+	// These ids are what the bridge journal recorded its attributions against;
+	// prefixing them "for consistency" would orphan every one.
+	check('the main profile keeps its bare id', listed.some((a) => a.id === 'account-a/org-a'));
+	check('a second profile prefixes its own', listed.some((a) => a.id === 'instance:claude-work:account-a/org-a'));
+	check('the second is flagged so its column can look secondary', listed.find((a) => a.secondary)?.rootLabel === 'Work');
+	check('the main one is not flagged', listed.find((a) => a.id === 'account-a/org-a').secondary === false);
+
+	const merged = await mergeIndexRoot({ from: instRoot, toPath: main });
+	check('a session only the instance listed moves over', merged.moved === 1);
+	check('its entry file is in the main profile now', (await readdir(mainA)).includes('local_2.json'));
+	// One duplicate must not abandon the rest half-merged.
+	check('a session already listed there is skipped, not thrown on', merged.skipped.length === 1);
+	check('and the skip says why', /already listed/.test(merged.skipped[0].why));
+	check('the skipped entry stays where it was', (await readdir(instA)).includes('local_3.json'));
+	// Nothing on disk says which profile minted a Remote Control link, so a bulk
+	// move has to leave the same note a single drag leaves.
+	check('links on a moved entry are reported', merged.carried[0]?.cliSessionId === 'cli-2');
+	check('named against the profile they came from', merged.carried[0]?.fromAccount === 'instance:claude-work:account-a/org-a');
+
+	// A folder chosen from a file dialog reads either way round, because both
+	// readings are reasonable and only one of them can be right by accident.
+	check('a profile folder resolves to the index inside it', (await readIndexRoot(profile))?.path === inst);
+	check('the index folder resolves to itself', (await readIndexRoot(inst))?.path === inst);
+	check('anything else is refused rather than added as a root that reads nothing', (await readIndexRoot(root)) === null);
+
+	const store = new AccountStore(await mkdtemp(join(tmpdir(), 'aidash-roots-')));
+	await store.load();
+	check('the main profile is a root before anything is added', (await store.indexRoots()).length === 1);
+	const id = await store.addSessionRoot({ path: inst, profile, label: 'Borrowed' });
+	check('a hand-picked folder becomes a root', (await store.indexRoots()).some((r) => r.id === id && r.kind === 'manual'));
+	check('the same folder twice is refused', /already listed/.test(await rejects(() => store.addSessionRoot({ path: inst, profile }))));
+	// Forgetting must never be able to reach a folder the app derived from an
+	// account, because that one is deleted rather than forgotten.
+	check('a derived root cannot be forgotten by hand', /belongs to an account/.test(await rejects(() => store.removeSessionRoot('instance:claude-work'))));
+	await store.removeSessionRoot(id);
+	check('forgetting a hand-picked one drops it', (await store.indexRoots()).length === 1);
+}
+
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');
 process.exit(failures ? 1 : 0);

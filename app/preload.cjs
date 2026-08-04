@@ -21,7 +21,16 @@ contextBridge.exposeInMainWorld('aidash', {
 
 	openUrl: (url) => ipcRenderer.invoke('shell:open', url),
 	checkForUpdate: () => ipcRenderer.invoke('updates:check'),
+	releaseNotes: () => ipcRenderer.invoke('notes:get'),
 	setSetting: (key, value) => ipcRenderer.invoke('settings:set', { key, value }),
+
+	// A second copy of Claude Desktop per account, and the folders it leaves.
+	instances: {
+		open: (accountId) => ipcRenderer.invoke('instances:open', accountId),
+		merge: (rootId) => ipcRenderer.invoke('instances:merge', rootId),
+		addRoot: () => ipcRenderer.invoke('roots:add'),
+		forgetRoot: (id) => ipcRenderer.invoke('roots:forget', id),
+	},
 
 	sessions: {
 		scan: () => ipcRenderer.invoke('sessions:scan'),
