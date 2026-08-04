@@ -22,7 +22,8 @@
     "productName": "aidash",
     "files": [
       "app/**/*",
-      "package.json"
+      "package.json",
+      "CHANGELOG.md"
     ],
     "directories": {
       "buildResources": "build"

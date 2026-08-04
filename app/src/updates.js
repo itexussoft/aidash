@@ -12,6 +12,8 @@
  * a change here and nowhere else.
  */
 
+import { manifestNotes } from './notes.js';
+
 const MANIFEST_URL = 'https://aidash.itex.us/version.json';
 const TIMEOUT_MS = 8000;
 
@@ -55,7 +57,10 @@ export async function checkForUpdate(currentVersion) {
 		const key = platformKey();
 		return {
 			version: manifest.version,
-			notes: manifest.notes ?? null,
+			// Lines rather than a sentence: a release is a list of things, and the
+			// banner has room to show it as one. A manifest still carrying a single
+			// string arrives as a list of one.
+			notes: manifestNotes(manifest.notes),
 			// Fall back to the landing page when this platform has no build yet,
 			// so the banner still leads somewhere useful.
 			downloadUrl: manifest.downloads?.[key] ?? manifest.downloads?.[platformKey().split('-')[0]] ?? manifest.url ?? 'https://aidash.itex.us',

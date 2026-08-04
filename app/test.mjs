@@ -570,6 +570,58 @@ console.log('\nsearching every transcript');
 	check('an abandoned search returns nothing and says it is incomplete', abandoned.results.length === 0 && abandoned.complete === false);
 }
 
+/* --------------------------------------------------------- release notes */
+
+// The file is written by a person and read by the interface, so the parser has
+// to survive the prose a person puts around it.
+console.log('\nrelease notes');
+{
+	const { parseNotes, notesFor, manifestNotes } = await import('./src/notes.js');
+
+	const entries = parseNotes(`# What's new
+
+Some prose about how to keep this file, which is not a version and not a note.
+
+## Unreleased
+
+- Something not shipped yet
+
+## 0.1.3
+
+- Notarises the disk image
+- Says which test failed on CI, wrapping
+  onto a second line
+
+## 0.1.2
+
+Prose under a version heading is for whoever edits the file.
+
+- One thing
+`);
+
+	check('versions are found in file order', entries.map((e) => e.version).join(',') === 'Unreleased,0.1.3,0.1.2');
+	check('bullets belong to their version', notesFor(entries, '0.1.3').bullets.length === 2);
+	check('a wrapped note arrives as one line', notesFor(entries, '0.1.3').bullets[1] === 'Says which test failed on CI, wrapping onto a second line');
+	check('prose between the bullets is not a bullet', notesFor(entries, '0.1.2').bullets.length === 1);
+	check('a version nobody wrote about is absent', notesFor(entries, '9.9.9') === null);
+	check('a heading with no bullets is not an entry', parseNotes('## 1.0.0\n\n## 1.0.1\n- real\n').length === 1);
+	check('an empty file is empty, not a crash', parseNotes('').length === 0 && parseNotes(null).length === 0);
+
+	// The manifest on the server still carries a string; the banner has to keep
+	// understanding it while newer ones send a list.
+	check('a list from the manifest stays a list', manifestNotes(['a', 'b']).length === 2);
+	check('a string from the manifest becomes one line', manifestNotes('just one thing').length === 1);
+	check('nothing at all is no lines', manifestNotes(null).length === 0 && manifestNotes('  ').length === 0);
+
+	// The file this app actually ships, parsed as the app will parse it.
+	const { readNotes } = await import('./src/notes.js');
+	const { join: joinPath } = await import('node:path');
+	const shipped = await readNotes(joinPath(process.cwd(), 'CHANGELOG.md'));
+	check('the shipped changelog parses', shipped.length > 0);
+	check('and every entry it lists says something', shipped.every((e) => e.bullets.length > 0));
+	check('a changelog that is not there is not a failure', (await readNotes('/nowhere/CHANGELOG.md')).length === 0);
+}
+
 /* -------------------------------------------------------------- the store */
 
 console.log('\naccount store');
