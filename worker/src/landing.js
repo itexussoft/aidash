@@ -122,9 +122,14 @@ export function renderLanding({ version, downloads, repoUrl }) {
 <meta property="og:url" content="${SITE}/">
 <meta property="og:title" content="aidash — every AI quota on one screen">
 <meta property="og:description" content="${DESCRIPTION}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${SITE}/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="aidash — every AI quota on one screen">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="aidash — every AI quota on one screen">
 <meta name="twitter:description" content="${DESCRIPTION}">
+<meta name="twitter:image" content="${SITE}/og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -230,17 +235,21 @@ export function renderLanding({ version, downloads, repoUrl }) {
   }
   .pill i{width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px rgb(37 187 77 / .18)}
   .pill a{color:#fff; text-decoration-color:rgb(255 255 255 / .4)}
+  /* The sheen has to stay under about a 10% drop: any more and the last line
+     of a two-line headline reads as a different, greyer colour. */
   .hero h1{
     font-size:clamp(36px,5.6vw,62px); font-weight:600; line-height:1.05; letter-spacing:-.03em;
-    margin:0 auto 22px; max-width:16ch;
-    background:linear-gradient(180deg,#fff 34%,rgb(255 255 255 / .62));
+    margin:0 auto 22px; max-width:17ch; text-wrap:balance;
+    background:linear-gradient(180deg,#fff 40%,#E4EBEF);
     -webkit-background-clip:text; background-clip:text; color:transparent;
   }
   @supports not ((-webkit-background-clip:text) or (background-clip:text)){ .hero h1{color:#fff} }
-  .hero .sub{font-size:clamp(17px,1.5vw,19.5px); color:rgb(255 255 255 / .72); max-width:57ch; margin:0 auto 34px}
+  .hero .sub{font-size:clamp(17px,1.5vw,19.5px); color:rgb(255 255 255 / .72); max-width:57ch; margin:0 auto 34px; text-wrap:pretty}
   .downloads{display:flex; gap:12px; flex-wrap:wrap; justify-content:center}
-  .hero .meta{font-size:13.5px; color:rgb(255 255 255 / .45); margin-top:20px}
-  .hero .meta a{color:rgb(255 255 255 / .72)}
+  /* .55 rather than the .45 this used to be: below that the line drops under
+     4.5:1 against the ink and stops being text you can actually read. */
+  .hero .meta{font-size:13.5px; color:rgb(255 255 255 / .55); margin-top:20px}
+  .hero .meta a{color:rgb(255 255 255 / .78)}
   /* The window sits on a pedestal — a hairline bezel and a long shadow — so it
      reads as an object in the space rather than a picture pasted on it. */
   .hero-shot{
@@ -333,7 +342,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
   .cta{text-align:center}
   .cta h2{margin:0 auto 14px; max-width:20ch}
   .cta p{color:rgb(255 255 255 / .7); margin:0 auto 34px; font-size:clamp(16.5px,1.4vw,18px); max-width:52ch}
-  .cta .meta{font-size:13.5px; color:rgb(255 255 255 / .42); margin-top:22px}
+  .cta .meta{font-size:13.5px; color:rgb(255 255 255 / .55); margin-top:22px}
 
   .note{
     margin-top:36px; max-width:78ch; padding:16px 20px; font-size:14.5px; color:var(--muted);
@@ -355,10 +364,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
   .foot-base a{color:var(--muted)}
   @media (max-width:820px){ .foot{grid-template-columns:1fr 1fr; gap:32px} .foot>:first-child{grid-column:1/-1} }
 
-  @media (max-width:900px){
-    .split{grid-template-columns:1fr}
-    .split .shot{order:-1}
-  }
+  @media (max-width:900px){ .split{grid-template-columns:1fr} }
   @media (max-width:520px){
     .downloads{flex-direction:column; align-items:stretch}
     .btn{justify-content:center}

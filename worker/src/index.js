@@ -7,6 +7,10 @@
  */
 
 import { renderLanding } from './landing.js';
+// Drawn by build/make-og.py; bundled as an ArrayBuffer by the rule in
+// wrangler.toml. Served from here so a shared link carries a designed card
+// rather than the grey rectangle a missing og:image gets.
+import OG_CARD from './og.png';
 
 // Bumped together with the app's version in package.json when a build is
 // published. Kept here rather than in a database because it changes exactly as
@@ -56,6 +60,17 @@ export default {
 					// enough that launching the app is not a request per second.
 					'cache-control': 'public, max-age=300',
 					'access-control-allow-origin': '*',
+				},
+			});
+		}
+
+		if (pathname === '/og.png') {
+			return new Response(OG_CARD, {
+				headers: {
+					'content-type': 'image/png',
+					// Scrapers cache the card themselves; this only has to survive
+					// the burst of them that follows a link being posted.
+					'cache-control': 'public, max-age=86400',
 				},
 			});
 		}

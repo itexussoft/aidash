@@ -73,7 +73,10 @@ const groupLabel = (x, y, w, text) => `
  */
 export function usageMockup() {
 	const W = 720;
-	const H = 386;
+	// A card holds its title, an address bar and two meters: 54 to the first
+	// meter, 25 between them, 9.5 for the bar itself, and room to breathe under
+	// it. Anything less and the second bar sits on the card's own border.
+	const H = 412;
 	return `
 <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img"
      aria-label="The Usage tab: one card per account, with a separate bar for every limit">
@@ -100,11 +103,11 @@ export function usageMockup() {
 	])}
 
   ${groupLabel(24, 282, W - 24, '▾ CLAUDE')}
-  ${card(24, 292, 330, 78, 'Team', [
+  ${card(24, 292, 330, 104, 'Team', [
 		{ name: 'Weekly, all models', pct: 82, colour: WARN },
 		{ name: 'Weekly, one model', pct: 46, colour: ACCENT },
 	])}
-  ${card(366, 292, 330, 78, 'Personal', [
+  ${card(366, 292, 330, 104, 'Personal', [
 		{ name: 'Weekly, all models', pct: 24, colour: ACCENT },
 		{ name: 'Session', pct: 8, colour: ACCENT },
 	])}
@@ -133,7 +136,7 @@ const frameCompact = (w, active) => `
 /** Usage on a phone: one account per provider, still one bar per limit. */
 export function usageMockupCompact() {
 	const W = 360;
-	const H = 356;
+	const H = 382;
 	return `
 <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="10" fill="${SURFACE}" stroke="${LINE}"/>
@@ -146,13 +149,13 @@ export function usageMockupCompact() {
   ${label(W - 39, 87, 'Add', { size: 9, weight: 600, fill: '#fff', anchor: 'middle' })}
 
   ${groupLabel(18, 118, W - 18, '▾ CODEX')}
-  ${card(18, 126, W - 36, 96, 'Work', [
+  ${card(18, 126, W - 36, 104, 'Work', [
 		{ name: 'Weekly window', pct: 34, colour: ACCENT },
 		{ name: 'Spend control', pct: 100, colour: CRIT },
 	])}
 
-  ${groupLabel(18, 250, W - 18, '▾ CLAUDE')}
-  ${card(18, 258, W - 36, 82, 'Team', [
+  ${groupLabel(18, 254, W - 18, '▾ CLAUDE')}
+  ${card(18, 262, W - 36, 104, 'Team', [
 		{ name: 'Weekly, all models', pct: 82, colour: WARN },
 		{ name: 'Session', pct: 8, colour: ACCENT },
 	])}

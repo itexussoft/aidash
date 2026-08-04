@@ -10,5 +10,14 @@ compatibility_date = "2026-07-31"
 pattern = "aidash.itex.us"
 custom_domain = true
 
+# The link-preview card is a real PNG rather than base64 in a source file.
+# Wrangler bundles anything matched here as an ArrayBuffer the Worker imports.
+# fallthrough, or this shadows wrangler's own Data rule for **/*.bin and the
+# build warns about it on every deploy.
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = true
+
 [observability]
 enabled = true
