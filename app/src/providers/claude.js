@@ -120,7 +120,7 @@ export async function login(configDir, { onUrl, onNeedCode, signal } = {}) {
 }
 
 /** Returns a usable access token, refreshing and writing back when needed. */
-async function accessToken(configDir) {
+export async function accessToken(configDir) {
 	const creds = await readClaudeCredentials(configDir);
 	if (!creds?.refreshToken) throw new Error('no stored credentials — re-authorize this account');
 

@@ -364,6 +364,15 @@ button.ghost:hover:not(:disabled) {
 	color: var(--ok);
 }
 
+/* How old the reading is, coloured like the meters: a figure from an hour ago
+   describes a window that may have opened and closed since. */
+.head-meta.aged.warn {
+	color: var(--warn);
+}
+.head-meta.aged.crit {
+	color: var(--crit);
+}
+
 .lede {
 	font-size: 13px;
 	color: var(--muted);
@@ -409,6 +418,421 @@ button.ghost:hover:not(:disabled) {
 	font-size: 15px;
 	line-height: 1;
 	padding: 0 var(--step-1);
+}
+
+/* --------------------------------------------------------- project page */
+
+.project-open {
+	cursor: pointer;
+	display: flex;
+	align-items: baseline;
+	gap: var(--step-2);
+}
+.project-open:hover {
+	color: var(--accent);
+}
+.project-arrow {
+	opacity: 0;
+	font-size: 11px;
+}
+.project-open:hover .project-arrow {
+	opacity: 1;
+}
+
+.tl-day {
+	margin-bottom: var(--step-5);
+}
+.tl-day h3 {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--faint);
+	margin-bottom: var(--step-2);
+	padding-bottom: var(--step-1);
+	border-bottom: 1px solid var(--line);
+}
+.tl-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+/* One lane, in time order: the columns are what this view exists to collapse. */
+.tl-row {
+	display: grid;
+	grid-template-columns: 52px 1fr;
+	gap: var(--step-3);
+	padding: var(--step-2) 0;
+	border-bottom: 1px solid var(--line);
+}
+.tl-when {
+	font-size: 11px;
+	color: var(--faint);
+	font-variant-numeric: tabular-nums;
+	padding-top: 1px;
+}
+.tl-body {
+	min-width: 0;
+}
+.tl-line {
+	display: flex;
+	align-items: baseline;
+	gap: var(--step-2);
+	flex-wrap: wrap;
+}
+.tl-name {
+	font-size: 12.5px;
+}
+.tl-meta {
+	display: block;
+	font-size: 11px;
+	color: var(--faint);
+	margin-top: 2px;
+}
+
+/* Which identity produced the row — the one thing a merged list must not lose. */
+.tl-src {
+	flex: none;
+	font-size: 9px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	border-radius: 99px;
+	padding: 1px 6px;
+	border: 1px solid var(--line-strong);
+	color: var(--muted);
+	white-space: nowrap;
+}
+.tl-src.codex {
+	color: var(--warn);
+	border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.tl-src.orphan {
+	border-style: dashed;
+}
+
+.digest {
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface-2);
+	padding: var(--step-4);
+	margin-bottom: var(--step-5);
+}
+.dg-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--step-3);
+	font-size: 13px;
+	margin-bottom: var(--step-2);
+}
+.dg-actions {
+	display: flex;
+	gap: var(--step-2);
+}
+.dg-note {
+	margin: 0 0 var(--step-3);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--muted);
+	max-width: 84ch;
+}
+.dg-body {
+	margin: 0;
+	max-height: 340px;
+	overflow: auto;
+	font-size: 11.5px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	word-break: break-word;
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	padding: var(--step-3);
+}
+
+/* ------------------------------------------------ remote sessions panel */
+
+/* Deliberately not styled like a column: this is the other side of the link,
+   fetched on request, and nothing below depends on it. */
+.remote-panel {
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface-2);
+	padding: var(--step-4);
+	margin-bottom: var(--step-5);
+}
+.rp-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--step-3);
+	font-size: 13px;
+	margin-bottom: var(--step-2);
+}
+.rp-actions {
+	display: flex;
+	gap: var(--step-2);
+	flex-wrap: wrap;
+}
+.rp-note {
+	margin: 0 0 var(--step-4);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--muted);
+	max-width: 84ch;
+}
+/* The refusals belong next to the count, not hidden behind it. */
+.rp-report {
+	margin: 0 0 var(--step-4);
+	font-size: 12px;
+	line-height: 1.6;
+	max-width: 84ch;
+	padding: var(--step-2) var(--step-3);
+	border-left: 2px solid var(--accent);
+	background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.rp-fail {
+	font-size: 12px;
+	color: var(--crit);
+}
+.rp-accts,
+.rp-items {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.rp-accts {
+	display: flex;
+	flex-direction: column;
+	gap: var(--step-4);
+}
+.rp-acct > b {
+	font-size: 12.5px;
+}
+.rp-sum {
+	font-size: 11px;
+	color: var(--faint);
+	margin-left: var(--step-2);
+}
+.rp-items {
+	margin-top: var(--step-2);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.rp-item {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--step-3);
+	font-size: 12px;
+	padding: 2px 0;
+	border-bottom: 1px solid var(--line);
+}
+.rp-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.rp-meta {
+	flex: none;
+	color: var(--faint);
+	font-size: 11px;
+}
+
+/* ------------------------------------------------------- remote badge */
+
+/* Three states, and the difference between them is the point: plain means the
+   link is this account's, struck means it belongs to the account this session
+   was moved from, and the questioned one means nothing on disk can say. */
+.s-remote {
+	flex: none;
+	font-size: 9px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	border-radius: 99px;
+	padding: 1px 6px;
+	border: 1px solid transparent;
+	cursor: help;
+	white-space: nowrap;
+}
+.s-remote.here {
+	color: var(--accent);
+	border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+	background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.s-remote.elsewhere {
+	color: var(--faint);
+	border-color: var(--line);
+	text-decoration: line-through;
+	text-decoration-thickness: 1px;
+}
+/* Not a weaker version of either: a dashed edge reads as "unresolved" rather
+   than as "off". */
+.s-remote.shared {
+	color: var(--warn);
+	border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+	border-style: dashed;
+}
+
+/* -------------------------------------------------------------- outlook */
+
+/* Sits above the cards and reads as a summary of them rather than as a card of
+   its own: no shadow, no heading, a quieter surface. */
+.outlook {
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--surface-2);
+	padding: var(--step-4);
+	margin-bottom: var(--step-5);
+	display: flex;
+	flex-direction: column;
+	gap: var(--step-3);
+}
+
+.outlook-lead,
+.outlook-relief {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--step-2);
+	font-size: 13px;
+	margin: 0;
+}
+.outlook-lead {
+	font-size: 15px;
+}
+.lead-label {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--faint);
+}
+.lead-name {
+	font-weight: 650;
+}
+.lead-why {
+	color: var(--muted);
+	font-size: 13px;
+	min-width: 0;
+}
+
+.outlook-note {
+	margin: 0;
+	font-size: 12px;
+	color: var(--faint);
+}
+
+.timeline {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--step-1);
+}
+
+/* The name column is capped rather than proportional: left at 30% of a wide
+   window the reading drifts half a screen away from the account it belongs to. */
+.tl-lane {
+	display: grid;
+	grid-template-columns: minmax(110px, 230px) 1fr;
+	align-items: center;
+	gap: var(--step-3);
+	min-height: 22px;
+}
+
+.tl-who {
+	display: flex;
+	align-items: baseline;
+	gap: var(--step-1);
+	font-size: 12px;
+	min-width: 0;
+}
+.tl-who b {
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.tl-tag {
+	font-size: 9px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--faint);
+}
+.tl-pct {
+	margin-left: auto;
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+	font-size: 11px;
+}
+
+/* The track is the shared time axis; everything on it is positioned from
+   script, because `style-src 'self'` drops inline style attributes. */
+.tl-track {
+	position: relative;
+	display: block;
+	height: 18px;
+	border-left: 1px solid var(--line-strong);
+}
+.tl-track::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	border-top: 1px dashed var(--line);
+}
+
+.tl-dot {
+	position: absolute;
+	top: 50%;
+	width: 9px;
+	height: 9px;
+	margin: -5px 0 0 -5px;
+	border-radius: 50%;
+	border: 1px solid var(--surface-2);
+	background: var(--muted);
+}
+
+.tl-head {
+	min-height: 16px;
+}
+.tl-head .tl-who {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--faint);
+}
+.tl-head .tl-track {
+	height: 14px;
+	border-left-color: transparent;
+}
+.tl-head .tl-track::after {
+	border-top: none;
+}
+.tl-tick {
+	position: absolute;
+	top: 0;
+	font-size: 10px;
+	color: var(--faint);
+	transform: translateX(-50%);
+	white-space: nowrap;
+}
+.tl-now {
+	transform: none;
+}
+
+.tl-none {
+	font-size: 11px;
+	color: var(--faint);
+	line-height: 18px;
+	padding-left: var(--step-2);
 }
 
 /* ---------------------------------------------------------- usage cards */
@@ -930,6 +1354,10 @@ dialog menu {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	/* Takes the slack so the badge sits beside the actions rather than being
+	   pushed to the middle of the row by space-between. */
+	flex: 1;
+	min-width: 0;
 }
 .s-meta {
 	font-size: 11px;
@@ -1032,6 +1460,53 @@ dialog menu {
 	letter-spacing: 0.09em;
 	color: var(--faint);
 	margin-bottom: var(--step-3);
+}
+
+.settings {
+	display: flex;
+	flex-direction: column;
+	gap: var(--step-5);
+	max-width: 76ch;
+}
+.setting {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: var(--step-3);
+	align-items: start;
+	cursor: pointer;
+}
+.setting input {
+	margin-top: 2px;
+	accent-color: var(--accent);
+	width: 15px;
+	height: 15px;
+}
+.setting b {
+	display: block;
+	font-size: 13px;
+	font-weight: 600;
+	margin-bottom: 2px;
+}
+.setting .hint {
+	display: block;
+	line-height: 1.6;
+	max-width: 62ch;
+}
+/* A choice rather than a switch: the control belongs at the end of the row, and
+   the text is indented to where a checkbox would have left it. */
+.setting.choice {
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	padding-left: calc(15px + var(--step-3));
+}
+.setting.choice select {
+	font: inherit;
+	font-size: 12.5px;
+	color: var(--fg);
+	background: var(--surface);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	padding: var(--step-1) var(--step-2);
 }
 .about-legal p {
 	margin: 0 0 var(--step-3);

@@ -19,22 +19,55 @@ import { DEFAULT_ROOT } from './sessions.js';
 
 export const PROVIDERS = { codex, claude };
 
+/**
+ * Both on by default.
+ *
+ * They cost nothing to leave running — a reset time is a stamp already in hand,
+ * so the countdown behind them is local arithmetic, not a poll — and something
+ * that only speaks when a window you were near comes back is worth more before
+ * you notice you need it than after.
+ */
+export const DEFAULT_SETTINGS = { tray: true, notifications: true, refreshEveryMinutes: 60 };
+
 export class AccountStore {
 	constructor(userDataDir) {
 		this.file = join(userDataDir, 'accounts.json');
 		this.accountsDir = join(userDataDir, 'accounts');
-		this.state = { accounts: [], lastRefreshAt: null };
+		this.state = { accounts: [], lastRefreshAt: null, settings: { ...DEFAULT_SETTINGS } };
 	}
 
 	async load() {
 		try {
 			const raw = JSON.parse(await readFile(this.file, 'utf8'));
-			this.state = { accounts: raw.accounts ?? [], lastRefreshAt: raw.lastRefreshAt ?? null };
+			this.state = {
+				accounts: raw.accounts ?? [],
+				lastRefreshAt: raw.lastRefreshAt ?? null,
+				// Spread over the defaults rather than replacing them, so a setting
+				// added in a later version arrives switched on rather than undefined.
+				settings: { ...DEFAULT_SETTINGS, ...(raw.settings ?? {}) },
+			};
 		} catch {
-			this.state = { accounts: [], lastRefreshAt: null };
+			this.state = { accounts: [], lastRefreshAt: null, settings: { ...DEFAULT_SETTINGS } };
 		}
 
 		await mkdir(this.accountsDir, { recursive: true });
+		return this.state;
+	}
+
+	/**
+	 * Changes one preference and leaves the rest alone.
+	 *
+	 * The default's type decides how the value is read, so a switch cannot be set
+	 * to a number nor an interval to `true` by a caller that got it wrong.
+	 */
+	async setSetting(key, value) {
+		if (!(key in DEFAULT_SETTINGS)) throw new Error(`unknown setting: ${key}`);
+
+		const shape = DEFAULT_SETTINGS[key];
+		const next = typeof shape === 'number' ? Math.max(0, Math.round(Number(value) || 0)) : Boolean(value);
+
+		this.state.settings = { ...this.state.settings, [key]: next };
+		await this.save();
 		return this.state;
 	}
 

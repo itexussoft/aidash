@@ -19,6 +19,7 @@
 			<nav class="tabs">
 				<button class="tab chosen" data-tab="usage">Usage</button>
 				<button class="tab" data-tab="utils">Local Sessions</button>
+				<button class="tab" data-tab="settings">Settings</button>
 				<button class="tab" data-tab="about">About</button>
 				<output id="toast" class="toast" aria-live="polite"></output>
 			</nav>
@@ -44,6 +45,10 @@
 				<p class="head-meta" id="refreshed"></p>
 			</header>
 
+			<!-- The answer across every card: which account is furthest from
+			     stopping you, and when each window comes back. -->
+			<section id="outlook" class="outlook" hidden></section>
+
 			<main id="grid" class="grid"></main>
 
 			<section id="empty" class="empty" hidden>
@@ -61,6 +66,13 @@
 					<h1>Local Sessions</h1>
 				</div>
 				<div class="head-actions">
+					<button
+						id="sessions-remote"
+						class="ghost"
+						title="Asks each signed-in Claude account which Remote Control sessions the server has for it. Read-only, on request only, and nothing else in the app depends on the answer."
+					>
+						Check remote sessions on the server
+					</button>
 					<button id="sessions-rescan" class="ghost">Rescan</button>
 				</div>
 				<p class="head-meta" id="sessions-status"></p>
@@ -90,6 +102,8 @@
 				instead of moving it — the two describe conversations differently — and asks first.
 			</p>
 
+			<section id="remote-panel" class="remote-panel" hidden></section>
+
 			<div id="roots" class="roots"></div>
 			<div id="projects"></div>
 
@@ -98,6 +112,76 @@
 				<p>Claude Code has not recorded any sessions on this machine yet.</p>
 				<p class="hint">Accounts are read from Claude Code's own session index. Add a config folder above if an account here is showing as an unnamed id.</p>
 			</section>
+		</section>
+
+		<!-- ---------------------------------------------------------- Project -->
+		<!-- Reached from a project heading on Local Sessions, not from a tab: it is
+		     a drill-down into one row, and clicking any tab leaves it. -->
+		<section class="page" data-page="project" hidden>
+			<header class="page-head">
+				<div class="head-title">
+					<button id="project-back" class="ghost">← Sessions</button>
+					<h1 id="project-title">Project</h1>
+				</div>
+				<div class="head-actions">
+					<button id="project-digest-make" class="ghost" title="Reads the most recent transcripts and assembles what they record — branches, files touched, the last things asked. Nothing is summarised and no model is called.">
+						Build project brief
+					</button>
+				</div>
+				<p class="head-meta" id="project-path"></p>
+			</header>
+
+			<p class="lede" id="project-summary"></p>
+
+			<section id="project-digest" class="digest" hidden></section>
+
+			<div id="project-timeline"></div>
+		</section>
+
+		<!-- --------------------------------------------------------- Settings -->
+		<section class="page" data-page="settings" hidden>
+			<header class="page-head">
+				<div class="head-title"><h1>Settings</h1></div>
+			</header>
+
+			<div class="settings">
+				<label class="setting">
+					<input type="checkbox" id="set-tray" />
+					<span>
+						<b>Show in the menu bar</b>
+						<span class="hint">
+							A countdown to the next window worth waiting for, with every account in the menu behind it. Closing the
+							window leaves the app running there.
+						</span>
+					</span>
+				</label>
+				<label class="setting">
+					<input type="checkbox" id="set-notifications" />
+					<span>
+						<b>Notify when a window frees up</b>
+						<span class="hint">
+							Only for windows past 80%. The countdown is worked out from the reset time already stored, so nothing is
+							asked of either provider until the moment it comes back.
+						</span>
+					</span>
+				</label>
+				<label class="setting choice">
+					<span>
+						<b>Refresh on its own</b>
+						<span class="hint">
+							Measured from the last refresh, so refreshing by hand pushes the next one a full interval away. Runs with the
+							window closed.
+						</span>
+					</span>
+					<select id="set-interval">
+						<option value="0">Never</option>
+						<option value="30">Every 30 minutes</option>
+						<option value="60">Every hour</option>
+						<option value="120">Every 2 hours</option>
+						<option value="240">Every 4 hours</option>
+					</select>
+				</label>
+			</div>
 		</section>
 
 		<!-- ------------------------------------------------------------ About -->

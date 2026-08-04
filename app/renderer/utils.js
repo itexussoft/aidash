@@ -16,6 +16,7 @@
  */
 
 import { escapeHtml, relativeTime } from './render.js';
+import { openProject } from './project.js';
 import { notify, busy, done, failed, reason } from './notify.js';
 
 /** A cancelled dialog is not an event worth announcing. */
@@ -30,6 +31,7 @@ const rootsBox = $('#roots');
 const projectsBox = $('#projects');
 const emptyBox = $('#sessions-empty');
 const statusLabel = $('#sessions-status');
+const remotePanel = $('#remote-panel');
 
 const renameDialog = $('#session-rename-dialog');
 const renameInput = $('#session-rename-input');
@@ -78,6 +80,53 @@ function columns() {
 
 /* ------------------------------------------------------------------ render */
 
+/**
+ * The Remote Control badge, in the three states the link can be in.
+ *
+ * The wording carries the whole point: a struck-through badge is a statement
+ * about *this* account, not about the session, and the uncertain one is not a
+ * weaker version of the plain one — it is the case where nothing on disk can
+ * answer, and saying so is more use than picking.
+ */
+function remoteBadge(session) {
+	const count = session.bridges?.length ?? 0;
+	if (!session.bridge || !count) return '';
+
+	const links = `${count} link${count === 1 ? '' : 's'}`;
+
+	const explain = {
+		here: `Remote Control has been enabled for this session (${links}). It belongs to this account.`,
+		elsewhere:
+			`This session was moved here from another account, which is where its Remote Control link (${links}) stays — ` +
+			'it is listed there, not here. Drag it back to that account to restore it.',
+		shared:
+			`This session is listed by more than one account, and its Remote Control link (${links}) can only belong to one of them. ` +
+			'Nothing stored on this machine says which, so neither listing is treated as the owner.',
+	}[session.bridge];
+
+	if (!explain) return '';
+
+	// Which accounts have it set up, by name rather than by uuid. Read off the
+	// listings themselves, so it is exact and costs nothing.
+	const named = columns();
+	const configured = (session.remoteAccounts ?? [])
+		.map((id) => named.find((c) => c.id === id)?.name ?? id)
+		.sort((a, b) => a.localeCompare(b));
+
+	const where = configured.length ? `\n\nSet up under: ${configured.join(', ')}` : '';
+
+	// How it is known, when it is known by more than "nothing says otherwise".
+	const evidence =
+		session.bridgeVia === 'matched'
+			? '\n\nEstablished by matching the title against the remote sessions the server lists for each account.'
+			: session.bridgeVia === 'moved'
+				? '\n\nKnown because this app performed the move.'
+				: '';
+
+	const text = session.bridge === 'shared' ? 'remote?' : 'remote';
+	return `<span class="s-remote ${escapeHtml(session.bridge)}" title="${escapeHtml(explain + where + evidence)}">${escapeHtml(text)}</span>`;
+}
+
 function sessionCard(session, column, cwd) {
 	const meta = [
 		session.lastAt ? relativeTime(session.lastAt) : null,
@@ -112,9 +161,11 @@ function sessionCard(session, column, cwd) {
         data-cli="${escapeHtml(session.cliSessionId ?? '')}"
         data-title="${escapeHtml(session.title ?? '')}"
         data-account="${escapeHtml(column.id)}"
+        data-bridges="${escapeHtml(String(session.bridges?.length ?? 0))}"
         data-cwd="${escapeHtml(cwd)}">
       <span class="s-head">
         <span class="s-title">${escapeHtml(session.title ?? '(untitled session)')}</span>
+        ${remoteBadge(session)}
         ${actions}
       </span>
       <span class="s-meta">${escapeHtml(meta)}</span>
@@ -157,7 +208,10 @@ function projectRow(project) {
 
 	return `
     <section class="project">
-      <h3 title="${escapeHtml(project.cwd)}">${escapeHtml(project.cwd)}</h3>
+      <h3 class="project-open" role="button" tabindex="0" data-cwd="${escapeHtml(project.cwd)}"
+          title="Open this project on its own, with every account and both tools in one timeline">
+        ${escapeHtml(project.cwd)}<span class="project-arrow">→</span>
+      </h3>
       <div class="cols">${cols}</div>
     </section>`;
 }
@@ -190,6 +244,7 @@ function cardData(card) {
 		threadId: card.dataset.thread || null,
 		transcript: card.dataset.transcript || null,
 		title: card.dataset.title || '(untitled session)',
+		bridges: Number(card.dataset.bridges) || 0,
 	};
 }
 
@@ -265,6 +320,20 @@ renameInput.addEventListener('keydown', (e) => {
 /* -------------------------------------------------------------- drag & drop */
 
 function wireCards() {
+	for (const heading of projectsBox.querySelectorAll('.project-open')) {
+		const open = () => {
+			const project = view.projects.find((p) => p.cwd === heading.dataset.cwd);
+			if (project) openProject(project, columns());
+		};
+		heading.addEventListener('click', open);
+		heading.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				open();
+			}
+		});
+	}
+
 	for (const button of projectsBox.querySelectorAll('.s-act')) {
 		button.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -342,8 +411,17 @@ function wireCards() {
 						fromFile: source.entryFile,
 						cliSessionId: source.cliSessionId,
 						toAccountPath: target.path,
+						// Which column it left and which it landed in: the Remote
+						// Control link cannot follow, and only the mover can remember
+						// where it was minted.
+						fromAccount: source.fromColumn,
+						toAccount: target.id,
 					});
-					done('Moved — restart Claude Code to see it there');
+					done(
+						source.bridges
+							? 'Moved — the Remote Control link stays with the old account'
+							: 'Moved — restart Claude Code to see it there',
+					);
 				}
 
 				if (next) {
@@ -356,6 +434,147 @@ function wireCards() {
 		});
 	}
 }
+
+/* ------------------------------------------------- remote sessions panel */
+
+/**
+ * The other side of the link, on request.
+ *
+ * Kept visibly apart from the columns, and worded so nobody reads it as an
+ * answer to which account owns a badge — the server cannot say that, and this
+ * panel is not evidence for it. It lists what each account has, and it is
+ * allowed to be absent.
+ */
+function renderRemote(result) {
+	const rows = (result.accounts ?? [])
+		.map((account) => {
+			if (!account.ok) {
+				return `<li class="rp-acct"><b>${escapeHtml(account.label)}</b>
+          <span class="rp-fail">could not be read — ${escapeHtml(account.reason ?? 'no reason given')}</span></li>`;
+			}
+
+			const shown = account.sessions.slice(0, 8);
+			const rest = account.sessions.length - shown.length;
+
+			const items =
+				shown
+					.map(
+						(s) => `<li class="rp-item">
+              <span class="rp-title">${escapeHtml(s.title)}</span>
+              <span class="rp-meta">${escapeHtml(
+								[s.connection === 'connected' ? 'connected' : s.status, s.lastAt ? relativeTime(s.lastAt) : null].filter(Boolean).join(' · '),
+							)}</span>
+            </li>`,
+					)
+					.join('') || '<li class="rp-item"><span class="rp-meta">no Remote Control sessions on the server</span></li>';
+
+			const summary = [
+				`${account.sessions.length} remote session${account.sessions.length === 1 ? '' : 's'}`,
+				account.connected ? `${account.connected} connected now` : null,
+				account.others ? `${account.others} other session${account.others === 1 ? '' : 's'} not shown` : null,
+				account.truncated ? 'list truncated' : null,
+			]
+				.filter(Boolean)
+				.join(' · ');
+
+			return `<li class="rp-acct">
+        <b>${escapeHtml(account.label)}</b> <span class="rp-sum">${escapeHtml(summary)}</span>
+        <ul class="rp-items">${items}${rest > 0 ? `<li class="rp-item"><span class="rp-meta">+${rest} more</span></li>` : ''}</ul>
+      </li>`;
+		})
+		.join('');
+
+	remotePanel.innerHTML = `
+    <div class="rp-head">
+      <b>Remote sessions on the server</b>
+      <span class="rp-actions">
+        <button id="remote-match" class="ghost" title="Where a session's title and time single out exactly one remote session, and that list belongs to exactly one account, the link is recorded as that account's. Everything less certain than that is refused and counted.">Match unknown remote sessions</button>
+        <button id="remote-forget" class="ghost" title="Throws away every attribution worked out by matching. Moves this app performed are remembered separately and are left alone.">Forget matches</button>
+        <button id="remote-close" class="ghost">Hide</button>
+      </span>
+    </div>
+    <p class="rp-note">
+      What each account has on Anthropic's side right now. These are not the same objects as the links stored locally — the
+      identifiers do not correspond — so this neither confirms nor contradicts the <b>remote</b> badges below.
+    </p>
+    ${result.note ? `<p class="rp-fail">${escapeHtml(result.note)}</p>` : ''}
+    <ul class="rp-accts">${rows}</ul>`;
+
+	remotePanel.hidden = false;
+	remotePanel.querySelector('#remote-close')?.addEventListener('click', () => {
+		remotePanel.hidden = true;
+	});
+	remotePanel.querySelector('#remote-match')?.addEventListener('click', matchRemote);
+	remotePanel.querySelector('#remote-forget')?.addEventListener('click', forgetMatches);
+}
+
+/** Reports what matching did, refusals included — they are the larger half. */
+function matchReport({ matched, refused, considered, unreadable }) {
+	const r = refused ?? {};
+	const kept = [
+		r.ambiguousAccount ? `${r.ambiguousAccount} matched a list that more than one account returns` : null,
+		r.ambiguousTitle ? `${r.ambiguousTitle} had a title that is not unique` : null,
+		r.severalLinks ? `${r.severalLinks} carry more than one link` : null,
+		r.timeDisagrees ? `${r.timeDisagrees} matched a title but not a time` : null,
+		r.notFound ? `${r.notFound} are not on the server at all` : null,
+	].filter(Boolean);
+
+	return `
+    <p class="rp-report">
+      <b>${matched} of ${considered}</b> link${considered === 1 ? '' : 's'} attributed.
+      ${kept.length ? `Left alone: ${escapeHtml(kept.join('; '))}.` : ''}
+      ${unreadable?.length ? `Could not read: ${escapeHtml(unreadable.join(', '))}.` : ''}
+    </p>`;
+}
+
+async function matchRemote() {
+	busy('Matching…');
+	try {
+		const result = await window.aidash.sessions.matchRemote();
+		if (result.note) {
+			failed(result.note);
+			return;
+		}
+		if (result.view) {
+			view = result.view;
+			paintSessions();
+		}
+		remotePanel.querySelector('.rp-report')?.remove();
+		remotePanel.querySelector('.rp-note')?.insertAdjacentHTML('afterend', matchReport(result));
+		done(result.matched ? `Attributed ${result.matched}` : 'Nothing could be attributed with confidence');
+	} catch (err) {
+		failed(reason(err));
+	}
+}
+
+async function forgetMatches() {
+	busy('Forgetting…');
+	try {
+		const result = await window.aidash.sessions.forgetMatches();
+		if (result.view) {
+			view = result.view;
+			paintSessions();
+		}
+		remotePanel.querySelector('.rp-report')?.remove();
+		done('Matches forgotten');
+	} catch (err) {
+		failed(reason(err));
+	}
+}
+
+$('#sessions-remote').addEventListener('click', async () => {
+	busy('Asking the server…');
+	try {
+		// The handler swallows its own failures, so this only guards against the
+		// bridge itself being unavailable.
+		const result = await window.aidash.sessions.remote();
+		renderRemote(result);
+		const read = (result.accounts ?? []).filter((a) => a.ok).length;
+		done(read ? `Read ${read} account${read === 1 ? '' : 's'}` : 'Nothing could be read — the panel says why');
+	} catch (err) {
+		failed(reason(err));
+	}
+});
 
 /* -------------------------------------------------------------------- load */
 

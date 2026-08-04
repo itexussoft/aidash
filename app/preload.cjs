@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('aidash', {
 
 	openUrl: (url) => ipcRenderer.invoke('shell:open', url),
 	checkForUpdate: () => ipcRenderer.invoke('updates:check'),
+	setSetting: (key, value) => ipcRenderer.invoke('settings:set', { key, value }),
 
 	sessions: {
 		scan: () => ipcRenderer.invoke('sessions:scan'),
@@ -30,11 +31,24 @@ contextBridge.exposeInMainWorld('aidash', {
 		rename: (request) => ipcRenderer.invoke('sessions:rename', request),
 		remove: (request) => ipcRenderer.invoke('sessions:delete', request),
 		export: (request) => ipcRenderer.invoke('sessions:export', request),
+		remote: () => ipcRenderer.invoke('sessions:remote'),
+		matchRemote: () => ipcRenderer.invoke('sessions:matchRemote'),
+		digest: (request) => ipcRenderer.invoke('sessions:digest', request),
+		saveDigest: (request) => ipcRenderer.invoke('sessions:saveDigest', request),
+		forgetMatches: () => ipcRenderer.invoke('sessions:forgetMatches'),
 	},
 
 	onLoginProgress: (handler) => {
 		const listener = (_event, payload) => handler(payload);
 		ipcRenderer.on('login:progress', listener);
 		return () => ipcRenderer.removeListener('login:progress', listener);
+	},
+
+	// State can now change without the window asking: the menu bar can refresh,
+	// and so can a window that has just reset.
+	onStateChanged: (handler) => {
+		const listener = (_event, payload) => handler(payload);
+		ipcRenderer.on('state:changed', listener);
+		return () => ipcRenderer.removeListener('state:changed', listener);
 	},
 });

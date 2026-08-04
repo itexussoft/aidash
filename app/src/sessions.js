@@ -477,7 +477,11 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 					title: entry.title ?? null,
 					model: entry.model ?? null,
 					archived: Boolean(entry.isArchived),
+					createdAt: entry.createdAt ?? null,
 					lastAt: entry.lastActivityAt ?? entry.createdAt ?? null,
+					// The Remote Control links, carried through as the entry holds them.
+					// An id says nothing about which account minted it — see bridges.js.
+					bridges: Array.isArray(entry.bridgeSessionIds) ? entry.bridgeSessionIds : [],
 					...facts,
 				});
 			}
@@ -517,6 +521,36 @@ export async function scanAll(configDirs = [DEFAULT_CONFIG_DIR], indexRoot = IND
 			sizeBytes: orphan.sizeBytes,
 			branch: orphan.branch,
 		});
+	}
+
+	// One conversation listed by two accounts at once. It happens without this
+	// app's involvement, and it is the case where nothing on disk can say which
+	// account a Remote Control link belongs to.
+	for (const project of byProject.values()) {
+		const listedBy = new Map();
+		const bridgedBy = new Map();
+
+		for (const [columnId, list] of Object.entries(project.byAccount)) {
+			if (columnId === UNINDEXED || columnId === CODEX) continue;
+			for (const session of list) {
+				if (!listedBy.has(session.cliSessionId)) listedBy.set(session.cliSessionId, new Set());
+				listedBy.get(session.cliSessionId).add(columnId);
+
+				// Which accounts have Remote Control set up for this conversation.
+				// Local and exact: each listing carries its own link list.
+				if (session.bridges.length) {
+					if (!bridgedBy.has(session.cliSessionId)) bridgedBy.set(session.cliSessionId, new Set());
+					bridgedBy.get(session.cliSessionId).add(columnId);
+				}
+			}
+		}
+
+		for (const list of Object.values(project.byAccount)) {
+			for (const session of list) {
+				session.duplicated = (listedBy.get(session.cliSessionId)?.size ?? 0) > 1;
+				session.remoteAccounts = [...(bridgedBy.get(session.cliSessionId) ?? [])];
+			}
+		}
 	}
 
 	for (const project of byProject.values()) {
@@ -564,6 +598,12 @@ export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
 	if (!(await exists(fromFile))) throw new Error('this session is no longer where it was — rescan and try again');
 	if (!(await exists(toAccountPath))) throw new Error('the destination account has no session store yet');
 
+	// Read before the move, and hand back: the Remote Control links are the one
+	// thing whose meaning the move changes, and afterwards nothing on disk can
+	// say where they came from.
+	const source = await readEntry(fromFile);
+	const bridges = Array.isArray(source?.bridgeSessionIds) ? source.bridgeSessionIds : [];
+
 	const target = join(toAccountPath, basename(fromFile));
 	if (await exists(target)) throw new Error('the destination account already lists this session');
 
@@ -584,5 +624,5 @@ export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
 		await rm(fromFile, { force: true });
 	}
 
-	return { moved: cliSessionId, to: toAccountPath };
+	return { moved: cliSessionId, to: toAccountPath, bridges };
 }

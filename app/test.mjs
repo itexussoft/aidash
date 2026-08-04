@@ -8,7 +8,12 @@
  * renderers are exercised against the real shapes rather than invented ones.
  */
 
-import { renderCard, refreshLabel, toEpochMs, relativeTime, barColour } from './renderer/render.js';
+import { renderCard, refreshLabel, staleness, toEpochMs, relativeTime, barColour } from './renderer/render.js';
+import { tightest, rankByHeadroom, upcomingResets } from './src/windows.js';
+import { Alerts, crossings, notableResets, MAX_DELAY, NOTIFY_ABOVE } from './src/alerts.js';
+import { bridgeState, HERE, ELSEWHERE, SHARED } from './src/bridges.js';
+import { proposeOwners, collapse } from './src/matching.js';
+import { outlookHtml, position } from './renderer/outlook.js';
 import { encodeCwd } from './src/sessions.js';
 import { spawnable } from './src/locate.js';
 
@@ -160,6 +165,15 @@ check('elapsed minutes shown', refreshLabel(Date.now() - 3 * 60000).startsWith('
 check('wall-clock time included', /· \d{1,2}:\d{2}/.test(refreshLabel(Date.now())));
 check('never-refreshed state', refreshLabel(null) === 'never refreshed');
 
+// A reading is not wrong when it ages, but it stops being worth acting on: past
+// twenty minutes a session window can have moved, past forty it can have opened
+// and closed again.
+check('a fresh reading is unmarked', staleness(Date.now() - 60000) === 'ok');
+check('nineteen minutes is still fresh', staleness(Date.now() - 19 * 60000) === 'ok');
+check('past twenty it is amber', staleness(Date.now() - 21 * 60000) === 'warn');
+check('past forty it is red', staleness(Date.now() - 41 * 60000) === 'crit');
+check('never refreshed is as stale as it gets', staleness(null) === 'crit');
+
 /* ---------------------------------------------------------------- escaping */
 
 console.log('\nescaping');
@@ -204,6 +218,292 @@ check('hue only ever falls', [0, 20, 40, 60, 80, 100].every((p, i, a) => i === 0
 check('past 100% clamps rather than wrapping back to green', barColour(887) === barColour(100));
 check('nonsense is treated as empty', barColour(null) === barColour(0));
 check('but the true figure is still shown', overCard.includes('887%'));
+
+/* --------------------------------------------------------------- outlook */
+
+// The summary above the cards answers two questions the cards cannot: which
+// account is furthest from stopping you, and when anything comes back. Both are
+// pure functions of the same payloads, so they are checked against them here.
+console.log('\noutlook');
+
+const NOW = Date.now();
+const inHours = (h) => NOW + h * 3600000;
+
+const roomy = {
+	id: 'codex-roomy',
+	provider: 'codex',
+	label: 'Roomy',
+	payload: { rateLimits: { primary: { usedPercent: 5, resetsAt: Math.floor(inHours(144) / 1000) } } },
+};
+
+const nearlyOut = {
+	id: 'claude-tight',
+	provider: 'claude',
+	label: 'Tight',
+	payload: {
+		limits: [
+			// Inactive and nearly full: the case the ranking must not wave through.
+			{ kind: 'session', percent: 92, severity: 'normal', is_active: false, resets_at: new Date(inHours(2)).toISOString() },
+			{ kind: 'weekly_all', percent: 30, severity: 'normal', is_active: true, resets_at: new Date(inHours(96)).toISOString() },
+		],
+	},
+};
+
+const silent = { id: 'quiet', provider: 'claude', label: 'Silent', payload: null };
+
+check('the fullest window decides an account', tightest(nearlyOut).percent === 92);
+check('an inactive window still counts — it applies the moment work starts', tightest(nearlyOut).label.includes('session'));
+check('an account with no readable window has no reading', tightest(silent) === null);
+
+const { ranked, unreadable } = rankByHeadroom([nearlyOut, roomy, silent]);
+check('most headroom first', ranked.map((r) => r.account.id).join(',') === 'codex-roomy,claude-tight');
+check('an unreadable account is set aside, not ranked as empty', unreadable.length === 1 && unreadable[0].id === 'quiet');
+
+const past = { id: 'stale', provider: 'codex', label: 'Stale', payload: { rateLimits: { primary: { usedPercent: 40, resetsAt: Math.floor(inHours(-3) / 1000) } } } };
+check('a reset already passed is dropped rather than drawn at zero', upcomingResets([past], NOW).length === 0);
+check('resets come back soonest first', upcomingResets([roomy, nearlyOut], NOW).map((r) => r.window.percent).join(',') === '92,30,5');
+
+const outlook = outlookHtml([nearlyOut, roomy, silent], NOW);
+check('the roomiest account is named as the answer', /Most room now[\s\S]*Roomy/.test(outlook));
+check('every account still gets a lane', outlook.includes('>Tight<') && outlook.includes('>Roomy<'));
+check('the unranked account is named rather than silently dropped', outlook.includes('Not ranked: Silent'));
+
+// The soonest reset is nearly always a session window at 4%, which is true and
+// useless; the line only speaks for windows close to stopping someone.
+const reliefLine = outlook.match(/<p class="outlook-relief">[\s\S]*?<\/p>/)?.[0] ?? '';
+check('relief names the window that is nearly out', reliefLine.includes('Tight') && reliefLine.includes('session'));
+check('relief skips the roomy account, whose reset is sooner in nothing that matters', !reliefLine.includes('Roomy'));
+check('nothing tight, nothing said', !outlookHtml([roomy], NOW).includes('Nearest relief'));
+check('no accounts, no section', outlookHtml([], NOW) === '' && outlookHtml([silent], NOW) === '');
+
+// Same policy as the meters: `style-src 'self'` drops inline style attributes,
+// so every position and colour has to travel as data and be applied by script.
+check('positions travel as data, not as inline styles', !/\sstyle="/.test(outlook) && /data-at="[\d.]+"/.test(outlook));
+check('a label with markup is escaped', outlookHtml([{ ...roomy, label: '<img src=x>' }], NOW).includes('&lt;img'));
+
+// A five-hour window and a monthly spend control share one axis. Spread
+// linearly, the whole of tomorrow lands in the first 3% of it.
+console.log('\ntimeline scale');
+const month = 720 * 3600000;
+check('time only ever moves right', [1, 6, 24, 72, 168].every((h, i, a) => i === 0 || position(h * 3600000, month) > position(a[i - 1] * 3600000, month)));
+check('now sits at the left edge', position(0, month) === 0);
+check('the far end is the far end', position(month, month) === 1);
+check('tomorrow gets real width rather than a sliver', position(24 * 3600000, month) > 0.4);
+check('a single near reset does not blow up the scale', position(600000, 600000) <= 1);
+
+/* ---------------------------------------------------------------- alerts */
+
+// What the menu bar and the notifications decide, without a menu bar or a
+// notification in sight. The timers are real, so the delays here are checked
+// rather than waited on.
+console.log('\nalerts');
+
+const claudeAt = (percent, hoursAway, id = 'acct') => ({
+	id,
+	provider: 'claude',
+	label: id,
+	payload: { limits: [{ kind: 'weekly_all', percent, is_active: true, resets_at: new Date(inHours(hoursAway)).toISOString() }] },
+});
+
+check('a quiet window is not worth interrupting anyone for', notableResets([claudeAt(4, 2)], NOW).length === 0);
+check('a window near the limit is', notableResets([claudeAt(92, 2)], NOW).length === 1);
+check('the threshold is the meters own amber', NOTIFY_ABOVE === 80);
+
+const first = crossings([claudeAt(92, 2)], new Map());
+check('the first reading is recorded, not announced', first.crossed.length === 0 && first.seen.get('acct') === 92);
+check('a window that stays high is not announced again', crossings([claudeAt(92, 2)], first.seen).crossed.length === 0);
+check('rising past the threshold is news', crossings([claudeAt(92, 2)], new Map([['acct', 40]])).crossed[0]?.level === 'nearly');
+check('running out entirely is different news', crossings([claudeAt(100, 2)], new Map([['acct', 90]])).crossed[0]?.level === 'exhausted');
+check('falling back after a reset is not news', crossings([claudeAt(3, 100)], new Map([['acct', 92]])).crossed.length === 0);
+
+// The regression this guards: setTimeout keeps its delay in a signed 32-bit
+// int, so a monthly spend control scheduled directly would fire at once, then
+// again, forever.
+const delays = [];
+const fakeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+globalThis.setTimeout = (fn, ms) => {
+	delays.push(ms);
+	return fakeTimers.setTimeout(() => {}, 0);
+};
+
+const said = [];
+const alerts = new Alerts({ notify: (m) => said.push(m), refresh: () => said.push({ title: 'refreshed' }), now: () => NOW });
+alerts.update([claudeAt(95, 24 * 40, 'far'), claudeAt(93, 3, 'near')]);
+
+globalThis.setTimeout = fakeTimers.setTimeout;
+
+check('a wait longer than a timer can hold is served in stages', delays.some((d) => d === MAX_DELAY));
+check('and a near one is waited on exactly', delays.some((d) => d === 3 * 3600000));
+check('nothing is announced merely by scheduling it', said.length === 0);
+
+const fired = [];
+const due = new Alerts({ notify: (m) => fired.push(m), refresh: () => fired.push({ title: 'refreshed' }), now: () => NOW });
+// A reset whose stamp has already passed: the notification is owed immediately,
+// and the numbers behind it are known to be stale.
+due.schedule({ account: { label: 'Work' }, window: { label: 'weekly all', percent: 95, resetAt: NOW - 1000 } });
+check('a reset already due is announced at once', fired[0]?.title === 'Work: weekly all is back');
+check('it says what the window had reached', fired[0]?.body.includes('95%'));
+check('and spends the one request that is now worth spending', fired[1]?.title === 'refreshed');
+
+const off = new Alerts({ notify: () => said.push('should not happen'), refresh: () => {}, now: () => NOW });
+off.enabled(false);
+off.update([claudeAt(92, 2, 'x')]);
+check('switched off, it schedules nothing', off.timers.length === 0);
+
+/* ------------------------------------------------------- remote control */
+
+// A bridge id names no account, so which account a Remote Control link belongs
+// to is never in the file — it is in where the file sits, and what this app
+// remembers moving. Three answers, and the third is not a weaker first.
+console.log('\nremote control links');
+
+const A = 'acctA/orgA';
+const B = 'acctB/orgB';
+const ids = ['session_01aaa', 'session_01bbb'];
+
+const at = (args) => bridgeState(args).state;
+
+check('no links, nothing to say', at({ bridges: [], accountId: A }) === null);
+check('links and no history read as this account’s', at({ bridges: ids, accountId: A, origin: null }) === HERE);
+check('moved away, every link predating the move', at({ bridges: ids, accountId: B, origin: { account: A, ids } }) === ELSEWHERE);
+check('back where they were minted', at({ bridges: ids, accountId: A, origin: { account: A, ids } }) === HERE);
+
+// Re-enabling Remote Control under the new account appends an id this account
+// does own, and one live link is enough to stop calling the badge foreign.
+check('a link minted here outweighs the ones that came with it', at({ bridges: [...ids, 'session_01new'], accountId: B, origin: { account: A, ids } }) === HERE);
+
+// The case that exists on the machine this was written against, with no help
+// from this app: one conversation, two accounts, the same link in both.
+check('listed by two accounts is unresolvable, not foreign', at({ bridges: ids, accountId: B, origin: null, duplicated: true }) === SHARED);
+check('and stays unresolvable even with a move on record', at({ bridges: ids, accountId: B, origin: { account: A, ids }, duplicated: true }) === SHARED);
+
+// What matching is for: it settles the case nothing local could.
+const owned = { [ids[0]]: { account: A }, [ids[1]]: { account: A } };
+check('a matched owner resolves the shared case', at({ bridges: ids, accountId: B, duplicated: true, owners: owned }) === ELSEWHERE);
+check('and resolves it in the owner’s favour too', at({ bridges: ids, accountId: A, duplicated: true, owners: owned }) === HERE);
+check('the grounds are reported, not just the verdict', bridgeState({ bridges: ids, accountId: A, owners: owned }).via === 'matched');
+check('a remembered move says so', bridgeState({ bridges: ids, accountId: B, origin: { account: A, ids } }).via === 'moved');
+check('and a badge resting on nothing admits it', bridgeState({ bridges: ids, accountId: A }).via === null);
+check(
+	'a partly matched set is not called foreign on half the evidence',
+	at({ bridges: ids, accountId: B, owners: { [ids[0]]: { account: A } } }) === HERE,
+);
+
+/* ---------------------------------------------------------- title matching */
+
+// Every refusal here was a wrong attribution the first version would have made
+// against real data: ten titles matched uniquely on the machine this was built
+// for, and only two of them could honestly be attributed to an account.
+console.log('\nmatching links to accounts');
+
+const remote = (title, lastAt, id) => ({ id, title, lastAt, connection: 'connected' });
+const localSession = (over) => ({ cliSessionId: 'c1', title: 'Etico', bridges: ['session_01x'], createdAt: NOW - 3600000, lastAt: NOW, ...over });
+
+const oneList = [{ ok: true, accounts: [A], sessions: [remote('Etico', NOW, 'cse_1')] }];
+
+check('a unique title in one account is attributed', proposeOwners({ sessions: [localSession()], sources: oneList }).owners[0]?.account === A);
+check('and names the link it attributed', proposeOwners({ sessions: [localSession()], sources: oneList }).owners[0]?.bridge === 'session_01x');
+
+// The condition the real data made necessary: two directories answering
+// identically are one list, and one list belonging to two accounts proves
+// nothing about either.
+const sharedList = [
+	{ ok: true, accounts: [A], sessions: [remote('Etico', NOW, 'cse_1')] },
+	{ ok: true, accounts: [B], sessions: [remote('Etico', NOW, 'cse_1')] },
+];
+check('two directories with the same list collapse into one', collapse(sharedList).length === 1);
+check('a list two accounts return attributes nothing', proposeOwners({ sessions: [localSession()], sources: sharedList }).owners.length === 0);
+check('and says why it refused', proposeOwners({ sessions: [localSession()], sources: sharedList }).refused.ambiguousAccount === 1);
+
+check(
+	'several links on one entry are left alone',
+	proposeOwners({ sessions: [localSession({ bridges: ['a', 'b'] })], sources: oneList }).refused.severalLinks === 1,
+);
+check(
+	'a title repeated locally is not resolvable either',
+	proposeOwners({ sessions: [localSession(), localSession({ cliSessionId: 'c2', bridges: ['session_01y'] })], sources: oneList }).refused.ambiguousTitle === 2,
+);
+check(
+	'a title that matches but a time that does not is refused',
+	proposeOwners({ sessions: [localSession({ createdAt: NOW - 10 * 86400000, lastAt: NOW - 9 * 86400000 })], sources: oneList }).refused.timeDisagrees === 1,
+);
+check('a title the server does not have is simply absent', proposeOwners({ sessions: [localSession({ title: 'Nowhere' })], sources: oneList }).refused.notFound === 1);
+check('an unreadable account contributes nothing and breaks nothing', proposeOwners({ sessions: [localSession()], sources: [{ ok: false }] }).refused.notFound === 1);
+
+/* -------------------------------------------------------- project digest */
+
+// The brief has to be derived rather than composed: what it claims must be
+// something a transcript actually recorded.
+console.log('\nproject brief');
+{
+	const { mkdtemp, writeFile: write } = await import('node:fs/promises');
+	const { tmpdir } = await import('node:os');
+	const { join: j } = await import('node:path');
+	const { readSession, buildDigest, digestMarkdown } = await import('./src/digest.js');
+
+	const dir = await mkdtemp(j(tmpdir(), 'aidash-digest-'));
+	const cwd = '/Users/someone/work/repo';
+
+	const claude = j(dir, 'claude.jsonl');
+	await write(
+		claude,
+		[
+			JSON.stringify({ type: 'user', cwd, gitBranch: 'feature/parser', message: { content: 'Fix the parser' }, timestamp: '2026-08-01T10:00:00Z' }),
+			JSON.stringify({
+				type: 'assistant',
+				gitBranch: 'feature/parser',
+				message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: `${cwd}/src/parse.js` } }] },
+			}),
+			JSON.stringify({
+				type: 'assistant',
+				message: { content: [{ type: 'tool_use', name: 'MultiEdit', input: { edits: [{ file_path: `${cwd}/src/lex.js` }] } }] },
+			}),
+			// A tool result is recorded as a user turn but is not a thing anyone said.
+			JSON.stringify({ type: 'user', message: { content: 'Result of calling the Edit tool: ok' }, timestamp: '2026-08-01T10:05:00Z' }),
+		].join('\n'),
+	);
+
+	const read = await readSession(claude, 'claude', cwd);
+	check('files a tool touched are collected', read.files.includes('src/parse.js'));
+	check('and from list-shaped edits too', read.files.includes('src/lex.js'));
+	check('paths are made relative to the project', !read.files.some((f) => f.startsWith('/')));
+	check('the branch is picked up', read.branches.includes('feature/parser'));
+	check('what was asked is kept', read.messages.some((m) => m.text === 'Fix the parser'));
+	check('tool results are not mistaken for things said', !read.messages.some((m) => m.text.startsWith('Result of calling')));
+
+	const codex = j(dir, 'codex.jsonl');
+	await write(
+		codex,
+		[
+			JSON.stringify({ type: 'session_meta', payload: { cwd } }),
+			JSON.stringify({ type: 'response_item', payload: { type: 'function_call', arguments: JSON.stringify({ path: `${cwd}/README.md` }) } }),
+			JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Update the readme' }] } }),
+			// Not every call carries JSON; it must not take the read down with it.
+			JSON.stringify({ type: 'response_item', payload: { type: 'function_call', arguments: 'ls -la' } }),
+		].join('\n'),
+	);
+
+	const fromCodex = await readSession(codex, 'codex', cwd);
+	check('Codex tool calls are read on their own terms', fromCodex.files.includes('README.md'));
+	check('and an unparseable argument is skipped, not fatal', fromCodex.messages.some((m) => m.text === 'Update the readme'));
+
+	const digest = await buildDigest({
+		cwd,
+		sources: ['Work', 'Codex'],
+		sessions: [
+			{ transcript: claude, tool: 'claude', title: 'Parser work', source: 'Work' },
+			{ transcript: codex, tool: 'codex', title: 'Readme', source: 'Codex' },
+		],
+	});
+	check('both tools land in one brief', digest.files.includes('src/parse.js') && digest.files.includes('README.md'));
+	check('a transcript that is gone does not break the brief', (await buildDigest({ cwd, sessions: [{ transcript: j(dir, 'nope.jsonl'), tool: 'claude' }] })).files.length === 0);
+
+	const md = digestMarkdown(digest);
+	check('the brief names the directory it describes', md.includes(cwd));
+	check('it admits what it left out', md.includes('other machines are not included'));
+	check('and says it summarised nothing', md.includes('Nothing here is summarised'));
+	check('files are listed for pasting', md.includes('`src/parse.js`'));
+}
 
 /* -------------------------------------------------------------- the store */
 
@@ -250,6 +550,33 @@ console.log('\naccount store');
 		renameError = err.message;
 	}
 	check('an empty name is refused', /name is required/.test(renameError ?? ''));
+
+	// Settings live beside the accounts, so a file written by an older version
+	// has to come back with the newer switches on rather than undefined.
+	check('settings start at their defaults', reloaded.state.settings.tray === true && reloaded.state.settings.refreshEveryMinutes === 60);
+
+	await reloaded.setSetting('tray', false);
+	await reloaded.setSetting('refreshEveryMinutes', '120');
+	const again = new AccountStore(dirname(store.file));
+	await again.load();
+	check('a switch survives a reload', again.state.settings.tray === false);
+	check('an interval is stored as a number, whatever it arrived as', again.state.settings.refreshEveryMinutes === 120);
+	check('the other settings are left alone', again.state.settings.notifications === true);
+
+	let settingError = null;
+	try {
+		await again.setSetting('somethingElse', true);
+	} catch (err) {
+		settingError = err.message;
+	}
+	check('an unknown setting is refused rather than stored', /unknown setting/.test(settingError ?? ''));
+
+	// A file from before settings existed must not come back with them missing.
+	const { writeFile } = await import('node:fs/promises');
+	await writeFile(again.file, JSON.stringify({ accounts: [], lastRefreshAt: null }));
+	const old = new AccountStore(dirname(store.file));
+	await old.load();
+	check('a file written before settings existed gets the defaults', old.state.settings.notifications === true);
 }
 
 /* ----------------------------------------------------------- sessions tab */

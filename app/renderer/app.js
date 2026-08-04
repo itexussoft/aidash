@@ -5,7 +5,8 @@
  * no access to credentials, processes or the filesystem.
  */
 
-import { renderCard, refreshLabel, escapeHtml, applyBarWidths } from './render.js';
+import { renderCard, refreshLabel, staleness, escapeHtml, applyBarWidths } from './render.js';
+import { outlookHtml, applyOutlook } from './outlook.js';
 import { rescan as rescanSessions } from './utils.js';
 import { busy, done, failed, reason } from './notify.js';
 
@@ -16,6 +17,7 @@ const AUTO_REFRESH_AFTER_MS = 10 * 60 * 1000;
 const $ = (sel) => document.querySelector(sel);
 
 const grid = $('#grid');
+const outlookBox = $('#outlook');
 const empty = $('#empty');
 const countTag = $('#count');
 const refreshBtn = $('#refresh');
@@ -54,6 +56,26 @@ let addInFlight = null;
 
 /* ------------------------------------------------------------------ render */
 
+/**
+ * The summary above the cards.
+ *
+ * Kept separate from paint() because it says "resets in 3h", which stops being
+ * true on its own — it is repainted on the clock as well as on new data. It
+ * holds no state of its own, so redrawing it costs nothing.
+ */
+/** The age of the reading, and how much that age matters. */
+function paintAge() {
+	refreshedLabel.textContent = refreshLabel(state.lastRefreshAt);
+	refreshedLabel.className = `head-meta aged ${staleness(state.lastRefreshAt)}`;
+}
+
+function paintOutlook() {
+	const html = outlookHtml(state.accounts);
+	outlookBox.hidden = !html;
+	outlookBox.innerHTML = html;
+	applyOutlook(outlookBox);
+}
+
 function paint() {
 	const { accounts, lastRefreshAt } = state;
 
@@ -62,7 +84,9 @@ function paint() {
 	countTag.textContent = accounts.length ? `${accounts.length} account${accounts.length === 1 ? '' : 's'}` : '';
 	refreshBtn.hidden = accounts.length === 0;
 	refreshedLabel.hidden = accounts.length === 0;
-	refreshedLabel.textContent = refreshLabel(lastRefreshAt);
+	paintAge();
+
+	paintOutlook();
 
 	// Grouped by provider: the two measure usage in different terms, so reading
 	// them as one list invites comparing numbers that are not comparable.
@@ -299,6 +323,45 @@ $('#add').addEventListener('click', openAddDialog);
 empty.querySelector('[data-action="add"]').addEventListener('click', openAddDialog);
 refreshBtn.addEventListener('click', refresh);
 
+/* ---------------------------------------------------------------- settings */
+
+const settingBoxes = { tray: $('#set-tray'), notifications: $('#set-notifications') };
+const intervalPicker = $('#set-interval');
+
+function paintSettings() {
+	for (const [key, box] of Object.entries(settingBoxes)) box.checked = state.settings?.[key] !== false;
+	intervalPicker.value = String(state.settings?.refreshEveryMinutes ?? 60);
+}
+
+async function changeSetting(key, value, announce) {
+	try {
+		state = await window.aidash.setSetting(key, value);
+		done(announce);
+	} catch (err) {
+		// Put the control back where the state actually is rather than leaving it
+		// showing something that did not happen.
+		paintSettings();
+		failed(reason(err));
+	}
+}
+
+for (const [key, box] of Object.entries(settingBoxes)) {
+	box.addEventListener('change', () => changeSetting(key, box.checked, box.checked ? 'Turned on' : 'Turned off'));
+}
+
+intervalPicker.addEventListener('change', () => {
+	const minutes = Number(intervalPicker.value);
+	changeSetting('refreshEveryMinutes', minutes, minutes ? `Refreshing every ${minutes < 60 ? `${minutes} min` : `${minutes / 60}h`}` : 'Automatic refresh off');
+});
+
+// The menu bar can refresh, and so can a window that has just come back, so the
+// window is no longer the only thing that changes the state.
+window.aidash.onStateChanged((next) => {
+	state = next;
+	paint();
+	paintSettings();
+});
+
 /* ------------------------------------------------------------------ update */
 
 // A dismissed version stays dismissed until a newer one appears, so the banner
@@ -340,15 +403,19 @@ for (const tab of document.querySelectorAll('.tab')) {
 
 state = await window.aidash.getState();
 paint();
+paintSettings();
 
 if (state.accounts.length > 0) {
 	const age = state.lastRefreshAt ? Date.now() - state.lastRefreshAt : Infinity;
 	if (age > AUTO_REFRESH_AFTER_MS) refresh();
 }
 
-// Keep the elapsed time honest without re-rendering the cards.
+// Keep the elapsed time and the countdowns honest. The cards are left alone —
+// redrawing them would close any raw payload a user had opened, which is a
+// worse trade than a card reading "in 3h" for a few minutes longer.
 setInterval(() => {
-	refreshedLabel.textContent = refreshLabel(state.lastRefreshAt);
+	paintAge();
+	paintOutlook();
 }, 30000);
 
 // Never blocks the window: an unreachable manifest simply means no banner.
