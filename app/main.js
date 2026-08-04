@@ -20,6 +20,7 @@ import {
 	deleteSession,
 	mergeIndexRoot,
 	listIndexAccounts,
+	clearAccountBridges,
 	importConversation as importIntoClaude,
 	CODEX,
 } from './src/sessions.js';
@@ -594,6 +595,39 @@ ipcMain.handle('sessions:forgetMatches', async () => {
 	} catch (err) {
 		return { note: String(err?.message ?? err).slice(0, 200) };
 	}
+});
+
+/**
+ * Clears every Remote Control link recorded for one account.
+ *
+ * Confirmed with a real dialog, because it edits the same file the desktop
+ * app reads — and says plainly what it does not do: nothing on the server is
+ * touched, so a link that is still genuinely live keeps running until Claude
+ * Code itself is quit or told to stop it.
+ */
+ipcMain.handle('sessions:clearRemoteLinks', async (_event, accountId) => {
+	const before = await scan();
+	const account = before.accounts.find((a) => a.id === accountId);
+	if (!account) throw new Error('no such account — rescan and try again');
+
+	const { response } = await dialog.showMessageBox(mainWindow, {
+		type: 'warning',
+		buttons: ['Clear links', 'Cancel'],
+		defaultId: 1,
+		cancelId: 1,
+		message: `Clear every Remote Control link for "${account.email ?? account.accountUuid}"?`,
+		detail:
+			"This edits the local record only — the same one Claude Desktop itself reads, so both stop treating these sessions " +
+			"as remote-controlled. It does not stop anything genuinely still running on the server: if a session is still live, " +
+			"quit Claude Code, or use `claude remote-control` / `/remote-control`, to actually stop it there. " +
+			'Remote Control can be turned on again per session afterwards, as normal.',
+	});
+	if (response !== 0) return null;
+
+	const { cleared, clearedIds } = await clearAccountBridges(account.path);
+	if (clearedIds.length) await journal.forgetLinks(clearedIds);
+
+	return { cleared, view: await scan() };
 });
 
 ipcMain.handle('sessions:move', async (_event, request) => {

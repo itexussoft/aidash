@@ -786,6 +786,52 @@ console.log('\nsession index');
 		/no longer there/.test(await rejects(() => adoptSession({ transcriptFile: join(index, 'nope.jsonl'), toAccountPath: B }))),
 	);
 
+	// The escape hatch for a stuck Remote Control link: a local edit of the same
+	// field the desktop app itself reads, done account-wide. Fresh filenames,
+	// deliberately distinct from the ones already written into A above.
+	const { clearAccountBridges } = await import('./src/sessions.js');
+	const { readFile: readJson } = await import('node:fs/promises');
+
+	await writeFile(
+		join(A, 'local_bridged.json'),
+		JSON.stringify(entry({ sessionId: 'local_bridged', cliSessionId: 'cli-bridged', title: 'Bridged', bridgeSessionIds: ['session_01a', 'session_01b'] })),
+	);
+	await writeFile(
+		join(A, 'local_unbridged.json'),
+		JSON.stringify(entry({ sessionId: 'local_unbridged', cliSessionId: 'cli-unbridged', title: 'Unbridged', bridgeSessionIds: [] })),
+	);
+
+	const result = await clearAccountBridges(A);
+	check('only entries that carried a link are counted', result.cleared === 1);
+	check('every id that was cleared is reported', result.clearedIds.sort().join(',') === 'session_01a,session_01b');
+
+	const wiped = JSON.parse(await readJson(join(A, 'local_bridged.json'), 'utf8'));
+	check('the link is gone from the file', wiped.bridgeSessionIds.length === 0);
+	check('the rest of the entry is untouched', wiped.title === 'Bridged' && wiped.cliSessionId === 'cli-bridged');
+
+	const untouched = JSON.parse(await readJson(join(A, 'local_unbridged.json'), 'utf8'));
+	check('an entry with no link is not rewritten', untouched.title === 'Unbridged' && Array.isArray(untouched.bridgeSessionIds));
+
+	check('clearing again finds nothing left to clear', (await clearAccountBridges(A)).cleared === 0);
+	check(
+		'an account with no session store is refused, not silently skipped',
+		/no session store/.test(await rejects(() => clearAccountBridges(join(index, 'nowhere')))),
+	);
+
+	console.log('\nforgetting cleared links');
+	const { BridgeJournal } = await import('./src/bridges.js');
+	const journal = new BridgeJournal(await mkdtemp(join(tmpdir(), 'aidash-bridges-')));
+	await journal.load();
+
+	await journal.attribute([{ bridge: 'session_01a', account: 'account-a/org-a' }]);
+	await journal.record({ cliSessionId: 'cli-bridged', bridges: ['session_01a', 'session_01b'], fromAccount: 'account-a/org-a' });
+	await journal.record({ cliSessionId: 'cli-untouched', bridges: ['session_untouched'], fromAccount: 'account-a/org-a' });
+
+	await journal.forgetLinks(['session_01a', 'session_01b']);
+	check('a forgotten attribution is gone', !journal.owners()['session_01a']);
+	check('a forgotten move is gone', journal.originOf('cli-bridged') === null);
+	check('an unrelated move survives', journal.originOf('cli-untouched')?.ids.includes('session_untouched'));
+
 	const { claudeEnv, keychainService, DEFAULT_CONFIG_DIR } = await import('./src/claude-config.js');
 	check('default directory runs with no CLAUDE_CONFIG_DIR', Object.keys(claudeEnv(DEFAULT_CONFIG_DIR)).length === 0);
 	check('other directories do set it', claudeEnv('/tmp/other').CLAUDE_CONFIG_DIR === '/tmp/other');

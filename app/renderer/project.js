@@ -13,6 +13,7 @@
  */
 
 import { escapeHtml, relativeTime } from './render.js';
+import { remoteBadge } from './remote-badge.js';
 import { notify, busy, done, failed, reason } from './notify.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -55,7 +56,7 @@ export function flatten(project, columns) {
 	return rows.sort((a, b) => (b.lastAt ?? 0) - (a.lastAt ?? 0));
 }
 
-function row(session) {
+function row(session, columns) {
 	const meta = [
 		session.model,
 		session.branch,
@@ -74,7 +75,7 @@ function row(session) {
         <span class="tl-line">
           <span class="tl-name">${escapeHtml(session.title ?? '(untitled session)')}</span>
           <span class="tl-src ${escapeHtml(session.tool)} ${session.orphan ? 'orphan' : ''}">${escapeHtml(session.source)}</span>
-          ${session.bridge ? `<span class="s-remote ${escapeHtml(session.bridge)}">${session.bridge === 'shared' ? 'remote?' : 'remote'}</span>` : ''}
+          ${remoteBadge(session, columns)}
         </span>
         ${meta ? `<span class="tl-meta">${escapeHtml(meta)}</span>` : ''}
       </span>
@@ -82,7 +83,7 @@ function row(session) {
 }
 
 /** Grouped by day, because "yesterday" is the unit the question is asked in. */
-function timeline(rows) {
+function timeline(rows, columns) {
 	if (!rows.length) return '<p class="muted">No sessions recorded for this project.</p>';
 
 	const out = [];
@@ -95,7 +96,7 @@ function timeline(rows) {
 			out.push(`<section class="tl-day"><h3>${escapeHtml(stamp)}</h3><ul class="tl-rows">`);
 			day = stamp;
 		}
-		out.push(row(session));
+		out.push(row(session, columns));
 	}
 	out.push('</ul></section>');
 	return out.join('');
@@ -120,7 +121,7 @@ export function openProject(project, columns) {
 		.filter(Boolean)
 		.join(' — ');
 
-	timelineBox.innerHTML = timeline(rows);
+	timelineBox.innerHTML = timeline(rows, columns);
 	digestBox.innerHTML = '';
 	digestBox.hidden = true;
 

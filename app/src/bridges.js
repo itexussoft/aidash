@@ -112,6 +112,34 @@ export class BridgeJournal {
 		await this.save();
 	}
 
+	/**
+	 * Forgets everything recorded about specific link ids.
+	 *
+	 * Called after those ids are cleared from the account that carried them: an
+	 * attribution or a remembered move naming an id that now exists nowhere on
+	 * disk is not a cautious record any more, it is stale weight that could only
+	 * ever mislead a later match.
+	 */
+	async forgetLinks(ids) {
+		const gone = new Set(ids);
+		let changed = false;
+
+		for (const id of Object.keys(this.state.owners)) {
+			if (!gone.has(id)) continue;
+			delete this.state.owners[id];
+			changed = true;
+		}
+
+		for (const [cliSessionId, origin] of Object.entries(this.state.moved)) {
+			if (!origin.ids.some((id) => gone.has(id))) continue;
+			delete this.state.moved[cliSessionId];
+			changed = true;
+		}
+
+		if (changed) await this.save();
+		return changed;
+	}
+
 	async save() {
 		await mkdir(dirname(this.file), { recursive: true });
 		await writeFile(this.file, JSON.stringify(this.state, null, 2));

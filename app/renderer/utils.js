@@ -17,6 +17,7 @@
 
 import { escapeHtml, relativeTime } from './render.js';
 import { openProject } from './project.js';
+import { remoteBadge } from './remote-badge.js';
 import { notify, busy, done, failed, reason } from './notify.js';
 
 /** A cancelled dialog is not an event worth announcing. */
@@ -198,53 +199,6 @@ function columns() {
 
 /* ------------------------------------------------------------------ render */
 
-/**
- * The Remote Control badge, in the three states the link can be in.
- *
- * The wording carries the whole point: a struck-through badge is a statement
- * about *this* account, not about the session, and the uncertain one is not a
- * weaker version of the plain one — it is the case where nothing on disk can
- * answer, and saying so is more use than picking.
- */
-function remoteBadge(session) {
-	const count = session.bridges?.length ?? 0;
-	if (!session.bridge || !count) return '';
-
-	const links = `${count} link${count === 1 ? '' : 's'}`;
-
-	const explain = {
-		here: `Remote Control has been enabled for this session (${links}). It belongs to this account.`,
-		elsewhere:
-			`This session was moved here from another account, which is where its Remote Control link (${links}) stays — ` +
-			'it is listed there, not here. Drag it back to that account to restore it.',
-		shared:
-			`This session is listed by more than one account, and its Remote Control link (${links}) can only belong to one of them. ` +
-			'Nothing stored on this machine says which, so neither listing is treated as the owner.',
-	}[session.bridge];
-
-	if (!explain) return '';
-
-	// Which accounts have it set up, by name rather than by uuid. Read off the
-	// listings themselves, so it is exact and costs nothing.
-	const named = columns();
-	const configured = (session.remoteAccounts ?? [])
-		.map((id) => named.find((c) => c.id === id)?.name ?? id)
-		.sort((a, b) => a.localeCompare(b));
-
-	const where = configured.length ? `\n\nSet up under: ${configured.join(', ')}` : '';
-
-	// How it is known, when it is known by more than "nothing says otherwise".
-	const evidence =
-		session.bridgeVia === 'matched'
-			? '\n\nEstablished by matching the title against the remote sessions the server lists for each account.'
-			: session.bridgeVia === 'moved'
-				? '\n\nKnown because this app performed the move.'
-				: '';
-
-	const text = session.bridge === 'shared' ? 'remote?' : 'remote';
-	return `<span class="s-remote ${escapeHtml(session.bridge)}" title="${escapeHtml(explain + where + evidence)}">${escapeHtml(text)}</span>`;
-}
-
 function sessionCard(session, column, cwd) {
 	const hit = session.transcript ? hits.get(session.transcript) : null;
 	const meta = [
@@ -284,7 +238,7 @@ function sessionCard(session, column, cwd) {
         data-cwd="${escapeHtml(cwd)}">
       <span class="s-head">
         <span class="s-title">${escapeHtml(session.title ?? '(untitled session)')}</span>
-        ${remoteBadge(session)}
+        ${remoteBadge(session, columns())}
         ${actions}
       </span>
       <span class="s-meta">${escapeHtml(meta)}</span>
@@ -361,6 +315,17 @@ function projectRow(project) {
  * nothing in it yet still earns a chip, so that "I made one" and "it is empty"
  * are distinguishable.
  */
+/** How many sessions under one account still carry a Remote Control link. */
+function bridgedCount(accountId) {
+	let n = 0;
+	for (const project of view.projects) {
+		for (const session of project.byAccount[accountId] ?? []) {
+			if (session.bridges?.length) n++;
+		}
+	}
+	return n;
+}
+
 function rootChips() {
 	const sessionsIn = (rootId) =>
 		view.accounts.filter((a) => (a.root ?? 'main') === rootId).reduce((n, a) => n + (a.sessions ?? 0), 0);
@@ -369,12 +334,22 @@ function rootChips() {
 
 	const chips = view.accounts
 		.filter((account) => !account.secondary)
-		.map(
-			(account) => `
+		.map((account) => {
+			const bridged = bridgedCount(account.id);
+			// Only shown where there is something to clear: the common case has
+			// nothing bridged, and a button that does nothing is worse than none.
+			const clear = bridged
+				? `<button class="rc-clear-remote" data-account="${escapeHtml(account.id)}"
+             title="Clears the local Remote Control record for ${bridged} session${bridged === 1 ? '' : 's'} under this account — the same record Claude Desktop itself reads. Does not stop anything still genuinely running on the server.">
+             clear remote (${bridged})
+           </button>`
+				: '';
+			return `
         <span class="root-chip ${account.expired ? 'stale' : ''}">
           ${escapeHtml(accountName(account))} · ${escapeHtml(counted(account.sessions))}
-        </span>`,
-		);
+          ${clear}
+        </span>`;
+		});
 
 	for (const root of (view.indexRoots ?? []).filter((r) => r.kind !== 'main')) {
 		const count = sessionsIn(root.id);
@@ -418,6 +393,25 @@ function wireRoots() {
 					`Merged ${result.moved} session${result.moved === 1 ? '' : 's'}` +
 						(skipped ? ` · ${skipped} left where they were, already listed there` : ''),
 				);
+			} catch (err) {
+				failed(reason(err));
+			}
+		});
+	}
+
+	for (const button of rootsBox.querySelectorAll('.rc-clear-remote')) {
+		button.addEventListener('click', async () => {
+			busy('Clearing…');
+			try {
+				// The confirmation lives in the main process, where it can say plainly
+				// that this is a local edit and does not stop anything genuinely still
+				// running on the server.
+				const result = await window.aidash.sessions.clearRemoteLinks(button.dataset.account);
+				if (!result) return notifyNothing();
+
+				view = result.view;
+				paintSessions();
+				done(`Cleared ${result.cleared} link${result.cleared === 1 ? '' : 's'}`);
 			} catch (err) {
 				failed(reason(err));
 			}

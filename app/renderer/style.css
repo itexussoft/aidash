@@ -736,6 +736,7 @@ button.ghost:hover:not(:disabled) {
    link is this account's, struck means it belongs to the account this session
    was moved from, and the questioned one means nothing on disk can say. */
 .s-remote {
+	position: relative;
 	flex: none;
 	font-size: 9px;
 	font-weight: 600;
@@ -746,6 +747,55 @@ button.ghost:hover:not(:disabled) {
 	border: 1px solid transparent;
 	cursor: help;
 	white-space: nowrap;
+}
+
+/*
+ * The explanation, drawn by this app rather than left to the browser's own
+ * `title` tooltip. It sits inside a `draggable="true"` card on the Sessions
+ * tab, and Chromium's native tooltip is unreliable on descendants of a
+ * draggable element — it can fail to appear at all, silently. `content:
+ * attr(...)` reads the text straight from the markup, so there is nothing
+ * here to keep in sync with remote-badge.js by hand.
+ *
+ * Hidden with opacity/visibility rather than `display`, so the fade can
+ * transition and so the hidden copy still takes no space and traps no clicks
+ * (`pointer-events: none` besides).
+ */
+.s-remote::after {
+	content: attr(data-explain);
+	position: absolute;
+	/* Opens leftward from the badge's right edge rather than rightward from its
+	   left edge. In every layout that draws this badge, the row's title takes
+	   the slack to its left (`flex: 1`) while only a handful of fixed-width
+	   icons sit to its right — so there is reliably more room on the left, and
+	   anchoring there keeps the popup on-screen without measuring anything. */
+	right: 0;
+	bottom: calc(100% + 6px);
+	z-index: 40;
+	width: max-content;
+	max-width: 300px;
+	white-space: pre-line;
+	text-align: left;
+	text-transform: none;
+	letter-spacing: normal;
+	font-size: 11px;
+	font-weight: 400;
+	line-height: 1.55;
+	color: var(--fg);
+	background: var(--surface);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	box-shadow: var(--shadow);
+	padding: var(--step-2) var(--step-3);
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity 0.12s ease;
+}
+.s-remote:hover::after,
+.s-remote:focus-visible::after {
+	opacity: 1;
+	visibility: visible;
 }
 .s-remote.here {
 	color: var(--accent);
@@ -1329,6 +1379,17 @@ dialog menu {
 .rc-merge:hover {
 	color: var(--fg);
 	background: var(--track);
+}
+.rc-clear-remote {
+	font-size: 10.5px;
+	line-height: 1;
+	padding: 3px 6px;
+	border-radius: 99px;
+	color: var(--faint);
+}
+.rc-clear-remote:hover {
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
 .rc-add {
 	font-size: 11.5px;

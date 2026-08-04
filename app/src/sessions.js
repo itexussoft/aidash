@@ -390,6 +390,40 @@ export async function renameSession(entryFile, title) {
 }
 
 /**
+ * Clears every Remote Control link this account's index records.
+ *
+ * A local edit only, and that is the whole of what it can be: `bridgeSessionIds`
+ * names a server-side session, and nothing this app holds can reach in and stop
+ * one. What it can do is edit the record — the same field the desktop app
+ * itself reads to know a session is remote-controlled — so both stop treating
+ * these sessions as live. That is not a lesser fix when the desktop app's own
+ * disconnect flow is the thing that is broken: editing the record directly is
+ * then the only way left out of a stuck state, not a workaround for one.
+ *
+ * Whatever is genuinely still running on the server keeps running; quitting
+ * Claude Code (or `claude remote-control` / `/remote-control` in the session
+ * that opened it) is what actually stops that.
+ */
+export async function clearAccountBridges(accountPath) {
+	if (!(await exists(accountPath))) throw new Error('this account has no session store');
+
+	let cleared = 0;
+	const clearedIds = [];
+
+	for (const file of (await readdir(accountPath)).filter((f) => f.endsWith('.json'))) {
+		const entry = await readEntry(join(accountPath, file));
+		if (!entry?.bridgeSessionIds?.length) continue;
+
+		clearedIds.push(...entry.bridgeSessionIds);
+		const { file: entryFile, ...rest } = entry;
+		await writeFile(entryFile, JSON.stringify({ ...rest, bridgeSessionIds: [] }, null, 2));
+		cleared++;
+	}
+
+	return { cleared, clearedIds };
+}
+
+/**
  * Removes a session: the entry that lists it and the transcript it points at.
  *
  * Both, deliberately — deleting only the entry would leave the conversation on

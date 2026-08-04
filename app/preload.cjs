@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('aidash', {
 		digest: (request) => ipcRenderer.invoke('sessions:digest', request),
 		saveDigest: (request) => ipcRenderer.invoke('sessions:saveDigest', request),
 		forgetMatches: () => ipcRenderer.invoke('sessions:forgetMatches'),
+		clearRemoteLinks: (accountId) => ipcRenderer.invoke('sessions:clearRemoteLinks', accountId),
 	},
 
 	onLoginProgress: (handler) => {
