@@ -1019,6 +1019,19 @@ console.log('\nseparate instances');
 	check('links on a moved entry are reported', merged.carried[0]?.cliSessionId === 'cli-2');
 	check('named against the profile they came from', merged.carried[0]?.fromAccount === 'instance:claude-work:account-a/org-a');
 
+	// The bug found live: a second org under the same instance whose only entry
+	// is unreadable moved nothing, and the merge still created an empty shell
+	// for it in the main profile — a folder with a name and no contents, left
+	// behind forever because nothing was ever there to clean it up again.
+	const { access } = await import('node:fs/promises');
+	const pathExists = (p) => access(p).then(() => true, () => false);
+	const instB = join(inst, 'account-a', 'org-b');
+	await mkdir(instB, { recursive: true });
+	await writeFile(join(instB, 'local_4.json'), 'not json');
+
+	await mergeIndexRoot({ from: instRoot, toPath: main });
+	check('an org that moved nothing gets no folder in the main profile', !(await pathExists(join(main, 'account-a', 'org-b'))));
+
 	// A folder chosen from a file dialog reads either way round, because both
 	// readings are reasonable and only one of them can be right by accident.
 	check('a profile folder resolves to the index inside it', (await readIndexRoot(profile))?.path === inst);

@@ -731,15 +731,19 @@ export async function mergeIndexRoot({ from, toPath = INDEX_ROOT }) {
 
 			const sourceDir = join(from.path, account.name, org.name);
 			const targetDir = join(toPath, account.name, org.name);
-			await mkdir(targetDir, { recursive: true });
 
 			// Built once. The single-session move re-reads the whole destination for
 			// every entry it checks, which is the right trade for one file and the
-			// wrong one for a hundred.
+			// wrong one for a hundred. Read only if the folder already exists —
+			// creating it here, before anything is known to be moving into it, is
+			// exactly the bug this guards: an org with nothing to move would leave an
+			// empty shell behind in the main profile forever.
 			const taken = new Set();
-			for (const file of (await readdir(targetDir)).filter((f) => f.endsWith('.json'))) {
-				const entry = await readEntry(join(targetDir, file));
-				if (entry?.cliSessionId) taken.add(entry.cliSessionId);
+			if (await exists(targetDir)) {
+				for (const file of (await readdir(targetDir)).filter((f) => f.endsWith('.json'))) {
+					const entry = await readEntry(join(targetDir, file));
+					if (entry?.cliSessionId) taken.add(entry.cliSessionId);
+				}
 			}
 
 			const fromAccount = `${from.id}:${account.name}/${org.name}`;
@@ -764,6 +768,9 @@ export async function mergeIndexRoot({ from, toPath = INDEX_ROOT }) {
 					skipped.push({ file, title: entry.title ?? null, why: 'a file of that name is already there' });
 					continue;
 				}
+
+				// Created only now, with something real about to go into it.
+				await mkdir(targetDir, { recursive: true });
 
 				try {
 					await rename(source, target);
