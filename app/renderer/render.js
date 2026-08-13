@@ -14,6 +14,7 @@
  */
 
 import { codexWindows, claudeWindows, toEpochMs } from '../src/windows.js';
+import { icon } from './icons.js';
 
 export { toEpochMs };
 
@@ -180,12 +181,12 @@ export function renderCard(account, availability = {}) {
 	const instance =
 		provider === 'claude' && availability.claudeDesktop
 			? `<button class="instance" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}"
-           title="Opens a second copy of Claude Desktop signed in as this account, running beside your main one. It keeps its own list of sessions; settings and transcripts stay shared.">separate instance</button>`
+           title="Opens a second copy of Claude Desktop signed in as this account, running beside your main one. It keeps its own list of sessions; settings and transcripts stay shared.">${icon('copy')}<span>separate instance</span></button>`
 			: '';
 	const actions =
 		instance +
-		`<button class="rename" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">rename</button>` +
-		`<button class="remove" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">remove</button>`;
+		`<button class="rename" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">${icon('pencil')}<span>rename</span></button>` +
+		`<button class="remove" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">${icon('trash')}<span>remove</span></button>`;
 	const identity = [email ?? payload?.email ?? payload?.account?.email, plan ?? payload?.plan_type ?? payload?.account?.planType]
 		.filter(Boolean)
 		.join(' · ');

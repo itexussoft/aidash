@@ -9,6 +9,7 @@ import { renderCard, refreshLabel, staleness, escapeHtml, applyBarWidths } from 
 import { outlookHtml, applyOutlook } from './outlook.js';
 import { rescan as rescanSessions } from './utils.js';
 import { busy, done, failed, reason } from './notify.js';
+import { icon } from './icons.js';
 
 // Opening the window refreshes when the data is older than this. There is no
 // background polling: the app only reaches out while you are looking at it.
@@ -21,7 +22,13 @@ const outlookBox = $('#outlook');
 const empty = $('#empty');
 const countTag = $('#count');
 const refreshBtn = $('#refresh');
+const refreshLabelSpan = $('#refresh-label');
 const refreshedLabel = $('#refreshed');
+
+// Injected rather than hand-copied into index.html, so icons.js stays the one
+// place a glyph's path data lives.
+refreshBtn.insertAdjacentHTML('afterbegin', icon('refresh'));
+$('#add').insertAdjacentHTML('afterbegin', icon('plus'));
 
 const dialog = $('#add-dialog');
 const providersBox = $('#providers');
@@ -205,7 +212,8 @@ renameInput.addEventListener('keydown', (e) => {
 
 async function refresh() {
 	refreshBtn.disabled = true;
-	refreshBtn.textContent = 'Refreshing…';
+	// The label span only, so the icon prepended at startup survives the swap.
+	refreshLabelSpan.textContent = 'Refreshing…';
 	busy('Refreshing usage…');
 	try {
 		state = await window.aidash.refresh();
@@ -217,7 +225,7 @@ async function refresh() {
 		failed(reason(err));
 	} finally {
 		refreshBtn.disabled = false;
-		refreshBtn.textContent = 'Refresh';
+		refreshLabelSpan.textContent = 'Refresh';
 		paint();
 	}
 }

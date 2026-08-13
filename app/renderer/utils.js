@@ -18,6 +18,7 @@
 import { escapeHtml, relativeTime } from './render.js';
 import { openProject } from './project.js';
 import { remoteBadge } from './remote-badge.js';
+import { icon } from './icons.js';
 import { notify, busy, done, failed, reason } from './notify.js';
 
 /** A cancelled dialog is not an event worth announcing. */
@@ -41,6 +42,41 @@ const renameError = $('#session-rename-error');
 
 let view = { accounts: [], projects: [] };
 let dragging = null;
+
+/**
+ * Which columns are folded out of the project grid.
+ *
+ * Keyed by root id for a secondary folder or Codex (`instance:…`, `manual-…`,
+ * `codex`), and by account id for a main-profile account — the same two shapes
+ * `columns()` already tells them apart by. Hiding is purely a display choice:
+ * nothing is forgotten, merged or removed, so it costs nothing to reverse and
+ * survives a rescan, remembered the same way collapsed usage groups are.
+ */
+const HIDDEN_KEY = 'aidash:hidden-columns';
+const hiddenColumns = new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]'));
+
+function setColumnHidden(key, hide) {
+	if (hide) hiddenColumns.add(key);
+	else hiddenColumns.delete(key);
+	localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenColumns]));
+	paintSessions();
+}
+
+/**
+ * Which projects are expanded, kept as the opt-in set rather than its
+ * opposite. A project not yet in this set reads as collapsed — which is the
+ * default every project starts at, including one that did not exist the last
+ * time this ran, without having to seed anything for it up front.
+ */
+const EXPANDED_KEY = 'aidash:expanded-projects';
+const expandedProjects = new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? '[]'));
+
+function toggleProject(cwd) {
+	if (expandedProjects.has(cwd)) expandedProjects.delete(cwd);
+	else expandedProjects.add(cwd);
+	localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expandedProjects]));
+	paintSessions();
+}
 let renaming = null;
 
 /* ------------------------------------------------------------------ search */
@@ -187,11 +223,21 @@ function columns() {
 			secondary: Boolean(account.secondary),
 			rootKind: account.rootKind ?? 'main',
 			rootLabel: account.rootLabel ?? null,
+			// A main account is hidden by its own id; a secondary one also folds away
+			// with the whole folder it lives in, so hiding an instance's chip takes
+			// every account inside it rather than needing one toggle each.
+			hidden: hiddenColumns.has(account.id) || (account.secondary && hiddenColumns.has(account.root)),
 		});
 	}
 
 	if (view.codex) {
-		cols.push({ id: CODEX, tool: CODEX, name: 'Codex', under: `${view.codex.sessions} sessions · shared by every account` });
+		cols.push({
+			id: CODEX,
+			tool: CODEX,
+			name: 'Codex',
+			under: `${view.codex.sessions} sessions · shared by every account`,
+			hidden: hiddenColumns.has(CODEX),
+		});
 	}
 
 	return cols;
@@ -246,11 +292,29 @@ function sessionCard(session, column, cwd) {
     </li>`;
 }
 
+/**
+ * Renders one project row, or nothing when there is nothing left to show it
+ * with. Hiding every column of a project this way rather than leaving an
+ * empty shell behind is the same call already made for search: a section
+ * heading over zero columns answers nothing.
+ */
 function projectRow(project) {
-	const cols = columns()
+	const visible = columns()
+		// Hidden first: a folded-away column is not a drop target either, so it
+		// is excluded on the same terms search already excludes an empty one.
+		.filter((column) => !column.hidden)
 		// While a search is on, a column with nothing left in it is not a drop
 		// target anyone is aiming at — it is width taken from the results.
-		.filter((column) => !query || (project.byAccount[column.id] ?? []).length > 0)
+		.filter((column) => !query || (project.byAccount[column.id] ?? []).length > 0);
+
+	if (!visible.length) return null;
+
+	// A search is aimed at finding something, not at re-deciding what's folded
+	// away; forcing every project open while one is active means the match is
+	// never hidden behind a caret the search itself didn't touch.
+	const expanded = Boolean(query) || expandedProjects.has(project.cwd);
+
+	const cols = visible
 		.map((column) => {
 			const sessions = project.byAccount[column.id] ?? [];
 			// An account nobody is signed in as anywhere the app can read shows as
@@ -297,23 +361,33 @@ function projectRow(project) {
 		.join('');
 
 	return `
-    <section class="project">
-      <h3 class="project-open" role="button" tabindex="0" data-cwd="${escapeHtml(project.cwd)}"
-          title="Open this project on its own, with every account and both tools in one timeline">
-        ${escapeHtml(project.cwd)}<span class="project-arrow">→</span>
-      </h3>
-      <div class="cols">${cols}</div>
+    <section class="project ${expanded ? '' : 'collapsed'}">
+      <div class="project-head">
+        <button type="button" class="project-fold" data-cwd="${escapeHtml(project.cwd)}"
+                aria-expanded="${expanded}" title="${expanded ? 'Collapse' : 'Expand'} this project">
+          <span class="project-caret">▼</span>
+        </button>
+        <h3 class="project-open" role="button" tabindex="0" data-cwd="${escapeHtml(project.cwd)}"
+            title="Open this project on its own, with every account and both tools in one timeline">
+          ${escapeHtml(project.cwd)}<span class="project-arrow">→</span>
+        </h3>
+      </div>
+      <div class="cols" ${expanded ? '' : 'hidden'}>${cols}</div>
     </section>`;
 }
 
 /**
- * The strip above the projects: what is being read, and what can be folded away.
+ * The strip above the projects: which session folders are being read, and
+ * which of their columns are folded away.
  *
- * Accounts in the main profile get a chip each. A secondary folder gets one chip
- * for the folder rather than one per account inside it, because the folder is
- * the thing that can be merged and retired — and a freshly opened instance with
- * nothing in it yet still earns a chip, so that "I made one" and "it is empty"
- * are distinguishable.
+ * Every chip is a folder on disk, and now says so with a folder icon rather
+ * than leaving the metaphor to a tooltip: Claude Desktop's own session index
+ * for an account, a second copy of it for an instance, or one pointed at by
+ * hand. Accounts in the main profile get a chip each. A secondary folder gets
+ * one chip for the folder rather than one per account inside it, because the
+ * folder is the thing that can be merged, retired or hidden — and a freshly
+ * opened instance with nothing in it yet still earns a chip, so that "I made
+ * one" and "it is empty" are distinguishable.
  */
 /** How many sessions under one account still carry a Remote Control link. */
 function bridgedCount(accountId) {
@@ -326,6 +400,15 @@ function bridgedCount(accountId) {
 	return n;
 }
 
+/** The eye toggle every chip carries, whatever else is on it. */
+function hideToggle(key, label) {
+	const hidden = hiddenColumns.has(key);
+	return `<button class="rc-hide" data-key="${escapeHtml(key)}"
+      title="${hidden ? `Show ${escapeHtml(label)}'s column again in the projects below.` : `Hide ${escapeHtml(label)}'s column from the projects below. Nothing is moved or forgotten — this is a display choice, and reverses the same way.`}">
+      ${icon(hidden ? 'eyeOff' : 'eye')}
+    </button>`;
+}
+
 function rootChips() {
 	const sessionsIn = (rootId) =>
 		view.accounts.filter((a) => (a.root ?? 'main') === rootId).reduce((n, a) => n + (a.sessions ?? 0), 0);
@@ -336,46 +419,86 @@ function rootChips() {
 		.filter((account) => !account.secondary)
 		.map((account) => {
 			const bridged = bridgedCount(account.id);
+			const name = accountName(account);
 			// Only shown where there is something to clear: the common case has
 			// nothing bridged, and a button that does nothing is worse than none.
 			const clear = bridged
 				? `<button class="rc-clear-remote" data-account="${escapeHtml(account.id)}"
              title="Clears the local Remote Control record for ${bridged} session${bridged === 1 ? '' : 's'} under this account — the same record Claude Desktop itself reads. Does not stop anything still genuinely running on the server.">
-             clear remote (${bridged})
+             ${icon('unlink')}<span>clear remote (${bridged})</span>
            </button>`
 				: '';
 			return `
-        <span class="root-chip ${account.expired ? 'stale' : ''}">
-          ${escapeHtml(accountName(account))} · ${escapeHtml(counted(account.sessions))}
-          ${clear}
+        <span class="root-chip ${account.expired ? 'stale' : ''} ${hiddenColumns.has(account.id) ? 'is-hidden' : ''}"
+              title="Claude Desktop's session folder for this account.">
+          <span class="rc-icon">${icon('folder')}</span>
+          <span class="rc-body">
+            <span class="rc-name">${escapeHtml(name)}</span>
+            <span class="rc-count">${escapeHtml(counted(account.sessions))}</span>
+          </span>
+          <span class="rc-actions">
+            ${hideToggle(account.id, name)}
+            ${clear}
+          </span>
         </span>`;
 		});
 
 	for (const root of (view.indexRoots ?? []).filter((r) => r.kind !== 'main')) {
 		const count = sessionsIn(root.id);
+		const name = root.label ?? root.id;
+		const kind = root.kind === 'instance' ? 'Instance' : 'Added folder';
 		chips.push(`
-      <span class="root-chip secondary" data-root="${escapeHtml(root.id)}">
-        <b class="rc-kind">${escapeHtml(root.kind === 'instance' ? 'instance' : 'folder')}</b>
-        ${escapeHtml(root.label ?? root.id)} · ${escapeHtml(counted(count))}
-        <button class="rc-merge" data-root="${escapeHtml(root.id)}"
-          title="${escapeHtml(
-						root.kind === 'instance'
-							? 'Moves every session here into the main profile under the same account, then deletes this separate instance. Transcripts are untouched. Quit that copy of Claude Desktop first.'
-							: 'Moves every session here into the main profile under the same account, then forgets this folder. Nothing on disk is deleted.',
-					)}">merge and remove</button>
+      <span class="root-chip secondary ${hiddenColumns.has(root.id) ? 'is-hidden' : ''}" data-root="${escapeHtml(root.id)}"
+            title="${escapeHtml(
+							root.kind === 'instance'
+								? 'A second copy of Claude Desktop, signed in as this account, with its own session folder.'
+								: 'A Claude Desktop session folder added by hand, kept on disk wherever it already was.',
+						)}">
+        <span class="rc-icon">${icon('folder')}</span>
+        <span class="rc-body">
+          <b class="rc-kind">${escapeHtml(kind)}</b>
+          <span class="rc-name">${escapeHtml(name)}</span>
+          <span class="rc-count">${escapeHtml(counted(count))}</span>
+        </span>
+        <span class="rc-actions">
+          ${hideToggle(root.id, name)}
+          <button class="rc-merge" data-root="${escapeHtml(root.id)}"
+            title="${escapeHtml(
+							root.kind === 'instance'
+								? 'Moves every session here into the main profile under the same account, then deletes this separate instance. Transcripts are untouched. Quit that copy of Claude Desktop first.'
+								: 'Moves every session here into the main profile under the same account, then forgets this folder. Nothing on disk is deleted.',
+						)}">${icon('merge')}<span>merge and remove</span></button>
+        </span>
       </span>`);
 	}
 
-	if (view.codex) chips.push(`<span class="root-chip">Codex · ${escapeHtml(String(view.codex.sessions))} sessions</span>`);
+	if (view.codex) {
+		chips.push(`
+      <span class="root-chip ${hiddenColumns.has(CODEX) ? 'is-hidden' : ''}" title="Codex's own session folder — one for every account, since nothing in it records which is signed in.">
+        <span class="rc-icon">${icon('folder')}</span>
+        <span class="rc-body">
+          <span class="rc-name">Codex</span>
+          <span class="rc-count">${escapeHtml(counted(view.codex.sessions))}</span>
+        </span>
+        <span class="rc-actions">${hideToggle(CODEX, 'Codex')}</span>
+      </span>`);
+	}
 
 	chips.push(
-		`<button id="roots-add" class="rc-add" title="Point at another copy of Claude Desktop's user data folder — one this app did not create — to list its sessions here too.">+ folder</button>`,
+		`<button id="roots-add" class="rc-add" title="Point at another copy of Claude Desktop's user data folder — one this app did not create — to list its sessions here too.">${icon('folderPlus')}<span>+ folder</span></button>`,
 	);
 
 	return chips.join('');
 }
 
 function wireRoots() {
+	// Pure client state — no confirmation, no IPC, nothing to undo but a second
+	// click. paintSessions() re-renders both the chip (icon flips) and the grid
+	// (the column appears or disappears) from the one flag.
+	for (const button of rootsBox.querySelectorAll('.rc-hide')) {
+		button.addEventListener('click', () => setColumnHidden(button.dataset.key, !hiddenColumns.has(button.dataset.key)));
+	}
+
 	for (const button of rootsBox.querySelectorAll('.rc-merge')) {
 		button.addEventListener('click', async () => {
 			busy('Merging…');
@@ -436,19 +559,29 @@ export function paintSessions() {
 	wireRoots();
 
 	const shown = visibleProjects();
-	const hasSessions = shown.length > 0;
+	// A project with data survives visibleProjects() but can still render
+	// nothing once folded-away columns are taken out — projectRow() returns
+	// null for exactly that case, so it has to be filtered here too.
+	const rows = shown.map(projectRow).filter(Boolean);
+	const hasSessions = rows.length > 0;
 
 	// Three paragraphs of preamble between the search box and its results is the
 	// same as having no results.
 	explainBox.hidden = Boolean(query);
 
-	emptyBox.hidden = hasSessions || Boolean(query);
-	projectsBox.hidden = !hasSessions && !query;
+	// The genuine empty state — nothing on this machine at all — is the only
+	// case `emptyBox` owns. A search with no hits and every account hidden both
+	// have something specific to say, and say it inside `projectsBox` instead.
+	const genuinelyEmpty = !hasSessions && !query && shown.length === 0;
+	emptyBox.hidden = !genuinelyEmpty;
+	projectsBox.hidden = genuinelyEmpty;
 	projectsBox.innerHTML = hasSessions
-		? shown.map(projectRow).join('')
+		? rows.join('')
 		: query
 			? `<p class="muted">Nothing matches “${escapeHtml(query)}”${searchNote ? ` — ${escapeHtml(searchNote)}` : ''}.</p>`
-			: '';
+			: shown.length > 0
+				? '<p class="muted">Every account is hidden. Click the eye on a chip above to bring one back.</p>'
+				: '';
 
 	showSummary();
 	wireCards();
@@ -552,6 +685,13 @@ function wireCards() {
 				e.preventDefault();
 				open();
 			}
+		});
+	}
+
+	for (const button of projectsBox.querySelectorAll('.project-fold')) {
+		button.addEventListener('click', (e) => {
+			e.stopPropagation();
+			toggleProject(button.dataset.cwd);
 		});
 	}
 

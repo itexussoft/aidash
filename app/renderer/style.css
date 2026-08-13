@@ -201,10 +201,25 @@ button:disabled {
 	cursor: default;
 }
 
+/* Every hand-drawn icon shares this box, so a row of buttons — some with an
+   icon, some without — still lines up on a common baseline. */
+.icon {
+	flex: none;
+	display: inline-block;
+	vertical-align: -2px;
+}
+
 button.primary,
 button.ghost {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	padding: 5px 12px;
 	line-height: 1.4;
+}
+button.primary .icon,
+button.ghost .icon {
+	vertical-align: -1px;
 }
 
 button.primary {
@@ -1174,13 +1189,47 @@ button.ghost:hover:not(:disabled) {
 .foot-actions {
 	display: flex;
 	align-items: center;
-	gap: var(--step-3);
+	gap: 6px;
 }
-button.remove:hover {
-	color: var(--crit);
+
+/*
+ * A plain-text button that only changes colour on hover is not a button you
+ * notice — it reads as a label until the cursor happens to cross it. That is
+ * exactly how "merge and remove" went unseen on an otherwise-identical chip.
+ * These carry a tinted background and an icon at rest, so discovering them
+ * does not depend on where the mouse already is.
+ */
+.foot-actions button {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px 3px 6px;
+	border-radius: 99px;
+	font-size: 11px;
+	line-height: 1.3;
+	border: 1px solid transparent;
 }
-button.instance:hover {
+.foot-actions .rename {
+	color: var(--muted);
+	background: var(--track);
+}
+.foot-actions .rename:hover {
+	color: var(--fg);
+	background: color-mix(in srgb, var(--fg) 12%, var(--track));
+}
+.foot-actions .instance {
 	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.foot-actions .instance:hover {
+	background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.foot-actions .remove {
+	color: var(--crit);
+	background: color-mix(in srgb, var(--crit) 10%, transparent);
+}
+.foot-actions .remove:hover {
+	background: color-mix(in srgb, var(--crit) 18%, transparent);
 }
 
 details {
@@ -1338,29 +1387,72 @@ dialog menu {
 .roots {
 	display: flex;
 	flex-wrap: wrap;
+	align-items: center;
 	gap: var(--step-2);
 	margin-bottom: var(--step-5);
 }
+
+/*
+ * Each chip is a folder on disk — Claude Desktop's own session index for an
+ * account, a second copy of it, or one pointed at by hand — and now carries a
+ * folder icon rather than leaving that to be inferred from a session count.
+ */
 .root-chip {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 7px;
 	font-size: 11.5px;
 	color: var(--muted);
 	background: var(--surface);
 	border: 1px solid var(--line);
 	border-radius: 99px;
-	padding: 3px 10px;
+	padding: 4px 6px 4px 10px;
 }
 .root-chip.stale {
 	color: var(--warn);
 	border-color: color-mix(in srgb, var(--warn) 35%, var(--line));
 }
 /* One chip per extra folder rather than per account inside it: the folder is
-   what can be merged away, so it is what carries the button. */
+   what can be merged, hidden or removed, so it is what carries the buttons. */
 .root-chip.secondary {
 	border-style: dashed;
 	background: transparent;
+}
+/* Still listed — the chip is how a hidden one is brought back — but set
+   visually apart from a column that is actually showing. */
+.root-chip.is-hidden {
+	opacity: 0.55;
+}
+.root-chip.is-hidden:hover {
+	opacity: 0.85;
+}
+
+.rc-icon {
+	flex: none;
+	display: inline-flex;
+	color: var(--faint);
+}
+.root-chip.secondary .rc-icon {
+	color: var(--accent);
+}
+
+.rc-body {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+	min-width: 0;
+}
+.rc-name {
+	color: var(--fg);
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 26ch;
+}
+.rc-count {
+	color: var(--faint);
+	white-space: nowrap;
 }
 .rc-kind {
 	font-size: 9.5px;
@@ -1369,32 +1461,61 @@ dialog menu {
 	text-transform: uppercase;
 	color: var(--faint);
 }
-.rc-merge {
+
+.rc-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	margin-left: 2px;
+}
+
+/*
+ * Every action on a chip shares this: icon first, a tinted background at
+ * rest, and text that stays put rather than appearing only on hover — the
+ * three things "merge and remove" was missing when it went unnoticed.
+ */
+.rc-actions button {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	font-size: 10.5px;
-	line-height: 1;
-	padding: 3px 6px;
+	line-height: 1.2;
+	padding: 4px 7px;
 	border-radius: 99px;
 	color: var(--faint);
 }
-.rc-merge:hover {
-	color: var(--fg);
+/* Icon-only: show/hide is a toggle, and a label would have to change meaning
+   on every click rather than just say what the icon already shows. */
+.rc-hide {
+	padding: 4px 6px;
 	background: var(--track);
 }
-.rc-clear-remote {
-	font-size: 10.5px;
-	line-height: 1;
-	padding: 3px 6px;
-	border-radius: 99px;
-	color: var(--faint);
+.rc-hide:hover {
+	color: var(--fg);
+	background: color-mix(in srgb, var(--fg) 12%, var(--track));
 }
-.rc-clear-remote:hover {
+.rc-merge {
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.rc-merge:hover {
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.rc-clear-remote {
 	color: var(--warn);
 	background: color-mix(in srgb, var(--warn) 10%, transparent);
 }
+.rc-clear-remote:hover {
+	background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
 .rc-add {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 	font-size: 11.5px;
 	line-height: 1;
-	padding: 4px 10px;
+	padding: 5px 10px 5px 8px;
 	border: 1px dashed var(--line);
 	border-radius: 99px;
 	color: var(--faint);
@@ -1411,11 +1532,44 @@ dialog menu {
 	font-size: 12px;
 	font-weight: 500;
 	color: var(--muted);
-	margin-bottom: var(--step-2);
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	flex: 1;
+	min-width: 0;
+}
+.project-head {
+	display: flex;
+	align-items: baseline;
+	gap: var(--step-2);
+	margin-bottom: var(--step-2);
+}
+.project-fold {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--faint);
+	cursor: pointer;
+}
+.project-fold:hover {
+	color: var(--muted);
+}
+.project-caret {
+	display: inline-block;
+	width: 9px;
+	font-size: 8px;
+	transition: transform 0.15s;
+	letter-spacing: 0;
+}
+.project.collapsed .project-caret {
+	transform: rotate(-90deg);
 }
 
 .cols {
