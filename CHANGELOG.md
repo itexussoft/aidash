@@ -8,6 +8,8 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+## 0.2.2
+
 - Shows every action button by its icon, instead of only on hover
 - Hides any session-folder column, and brings it back with one click
 - Collapses every project on Local Sessions by default, so the list stays scannable
