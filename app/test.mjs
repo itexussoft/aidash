@@ -105,17 +105,21 @@ check('flat /wham/usage shape still renders', flatCodex.includes('Weekly window'
 /* ----------------------------------------------------------------- claude */
 
 console.log('\nclaude (limits array)');
+// Relative to whenever the suite happens to run, not a date baked into the
+// fixture — a hardcoded timestamp reads as "in the past" the moment the
+// calendar catches up to it, which broke this check once already.
+const isoInHours = (h) => new Date(Date.now() + h * 3600000).toISOString();
 const claudePayload = {
-	five_hour: { utilization: 1, resets_at: '2026-08-03T13:49:59.342006+00:00' },
-	seven_day: { utilization: 56, resets_at: '2026-08-05T05:00:00.342030+00:00' },
+	five_hour: { utilization: 1, resets_at: isoInHours(4) },
+	seven_day: { utilization: 56, resets_at: isoInHours(4 * 24) },
 	limits: [
-		{ kind: 'session', percent: 1, severity: 'normal', resets_at: '2026-08-03T13:49:59.342006+00:00', scope: null, is_active: false },
-		{ kind: 'weekly_all', percent: 56, severity: 'normal', resets_at: '2026-08-05T05:00:00.342030+00:00', scope: null, is_active: true },
+		{ kind: 'session', percent: 1, severity: 'normal', resets_at: isoInHours(4), scope: null, is_active: false },
+		{ kind: 'weekly_all', percent: 56, severity: 'normal', resets_at: isoInHours(4 * 24), scope: null, is_active: true },
 		{
 			kind: 'weekly_scoped',
 			percent: 46,
 			severity: 'normal',
-			resets_at: '2026-08-05T05:00:00.342370+00:00',
+			resets_at: isoInHours(4 * 24),
 			scope: { model: { display_name: 'Fable' } },
 			is_active: false,
 		},
