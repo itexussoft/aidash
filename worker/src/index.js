@@ -22,12 +22,12 @@ const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`
 
 // The one line `npm run release` rewrites. Everything below derives from it, so
 // a bump cannot leave a download link pointing at the previous version's files.
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 
 // Bumped alongside VERSION by `npm run release`, copied from CHANGELOG.md's
 // "Unreleased" section — the app's own words for what this version brought,
 // shown in the update banner and on About without a second copy to keep in step.
-const NOTES = ["Says which account has the most room left, and when the next window frees up","Menu bar item counting down to that reset, with notifications when it arrives","Refreshes on its own on a schedule you set, and marks how old a reading is","Shows which account a session's Remote Control link belongs to","Lists what each account has on Anthropic's side, on request","Opens a project on its own: every session, both tools, all accounts, by day","Builds a project brief from recent transcripts, to paste under another account","Searches every transcript at once, across accounts and both tools","Runs a second copy of Claude Desktop per account, signed in side by side","Clears a stuck Remote Control link for a whole account, when Desktop's own disconnect fails"];
+const NOTES = ["Shows every action button by its icon, instead of only on hover","Hides any session-folder column, and brings it back with one click","Collapses every project on Local Sessions by default, so the list stays scannable","Stops merging a second profile from leaving an empty folder behind"];
 
 /**
  * Where each platform's installer lives, under the names electron-builder gives
