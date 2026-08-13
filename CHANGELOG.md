@@ -8,6 +8,11 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+- Shows every action button by its icon, instead of only on hover
+- Hides any session-folder column, and brings it back with one click
+- Collapses every project on Local Sessions by default, so the list stays scannable
+- Stops merging a second profile from leaving an empty folder behind
+
 ## 0.2.0
 
 - Says which account has the most room left, and when the next window frees up
