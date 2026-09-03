@@ -22,12 +22,12 @@ const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`
 
 // The one line `npm run release` rewrites. Everything below derives from it, so
 // a bump cannot leave a download link pointing at the previous version's files.
-const VERSION = '0.2.2';
+const VERSION = '0.3.0';
 
 // Bumped alongside VERSION by `npm run release`, copied from CHANGELOG.md's
 // "Unreleased" section — the app's own words for what this version brought,
 // shown in the update banner and on About without a second copy to keep in step.
-const NOTES = ["Shows every action button by its icon, instead of only on hover","Hides any session-folder column, and brings it back with one click","Collapses every project on Local Sessions by default, so the list stays scannable","Stops merging a second profile from leaving an empty folder behind"];
+const NOTES = ["Watches GitHub Copilot accounts: chat, completions and premium requests against the monthly credit allowance, signed in through the GitHub CLI","Watches Cursor accounts, each in its own copy of the editor, with the included and paid-for model pools kept apart","Marks both as alpha: neither vendor publishes a contract for the numbers, so a reading that stops making sense says so instead of drawing an empty bar","Signs an account in again in place, keeping its name, its sessions and its separate instance — an expired login no longer means removing the account","Frees the Finish button on the code box, which signing in to Claude needs"];
 
 /**
  * Where each platform's installer lives, under the names electron-builder gives

@@ -8,6 +8,8 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+## 0.3.0
+
 - Watches GitHub Copilot accounts: chat, completions and premium requests
   against the monthly credit allowance, signed in through the GitHub CLI
 - Watches Cursor accounts, each in its own copy of the editor, with the included

@@ -1,6 +1,6 @@
 {
   "name": "aidash",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Desktop dashboard showing quota usage across your Codex and Claude accounts",
