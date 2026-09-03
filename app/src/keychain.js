@@ -10,7 +10,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { userInfo } from 'node:os';
@@ -77,12 +77,39 @@ export async function writeClaudeCredentials(configDir, oauth) {
 	]);
 }
 
-/** Removes the credential for a directory, used when deleting an account. */
+/**
+ * Removes the credential for a directory.
+ *
+ * Both places, not only the keychain: a directory can hold a `.credentials.json`
+ * on macOS too, and a re-authorization that cleared one and left the other
+ * would hand the CLI back the very login it was asked to replace.
+ */
 export async function deleteClaudeCredentials(configDir) {
+	await rm(credFileFor(configDir), { force: true });
+
 	if (process.platform !== 'darwin') return;
 	try {
 		await run('security', ['delete-generic-password', '-s', keychainService(configDir)]);
 	} catch {
 		/* nothing stored for this directory */
 	}
+}
+
+/**
+ * Clears the stored credential and hands back the means to put it back.
+ *
+ * Used when signing an existing account in again. The clearing is the point:
+ * `claude auth login` against a directory that still holds a credential can
+ * decide it has nothing to do, which would turn "sign in again" into a button
+ * that quietly does nothing. Keeping the old one in hand until the new sign-in
+ * lands is what makes an abandoned attempt cost nothing — the account is left
+ * exactly as it was, expired token and all.
+ */
+export async function stashClaudeCredentials(configDir) {
+	const saved = await readClaudeCredentials(configDir);
+	await deleteClaudeCredentials(configDir);
+
+	return async () => {
+		if (saved) await writeClaudeCredentials(configDir, saved);
+	};
 }

@@ -17,6 +17,8 @@
  * 887%. Nothing is clamped on the way in; that is the renderer's business.
  */
 
+import { pick, number, usedPercent, when } from './providers/shapes.js';
+
 /** Accepts epoch seconds, epoch milliseconds, or an ISO 8601 string. */
 export function toEpochMs(value) {
 	if (value == null) return null;
@@ -30,7 +32,18 @@ export function toEpochMs(value) {
 	return n < 1e12 ? n * 1000 : n;
 }
 
+/**
+ * A percentage, or null for anything that is not one.
+ *
+ * Null and the empty string are rejected explicitly, and that is the entire
+ * point of the function: `Number(null)` is 0, and 0 is a finite number, so the
+ * obvious version of this turns "this field was not in the response" into "this
+ * limit is untouched" — a full green bar drawn at the exact moment we stopped
+ * understanding the payload. It was caught doing precisely that on a Copilot
+ * snapshot whose fields had been renamed.
+ */
 const asPercent = (value) => {
+	if (value == null || value === '' || typeof value === 'boolean') return null;
 	const n = Number(value);
 	return Number.isFinite(n) ? n : null;
 };
@@ -132,7 +145,107 @@ export function claudeWindows(p) {
 	return out;
 }
 
-const BY_PROVIDER = { codex: codexWindows, claude: claudeWindows };
+
+/**
+ * Copilot reports what is left rather than what is spent, one snapshot per
+ * thing it meters, and the snapshots are not interchangeable: a free account is
+ * measured in chat turns and completions, a paid one in credits against a
+ * monthly allowance. Both are read, because an account can carry a snapshot it
+ * does not use and dropping the wrong one leaves the card blank.
+ *
+ * Two traps, both from the move to credits in June 2026 and both silent:
+ *
+ *   - `has_quota` is false on every snapshot under the new billing, so reading
+ *     it as "no quota here" hides the entire account.
+ *   - an entitlement of 0 means the plan does not include this at all, while -1
+ *     means it is unlimited. Neither is a reading, and drawing either as a
+ *     percentage invents one.
+ */
+export function copilotWindows(p) {
+	const snapshots = p?.quota_snapshots;
+	if (!snapshots || typeof snapshots !== 'object') return [];
+
+	// One date for the lot: the allowance runs to the first of the month, and
+	// each snapshot carries a placeholder zero where its own reset would go.
+	const reset = when(p, ['quota_reset_date_utc', 'quota_reset_date', 'limited_user_reset_date']);
+
+	const names = { premium_models: 'premium requests', premium_interactions: 'premium requests', chat: 'chat', completions: 'completions' };
+	const out = [];
+
+	for (const [key, snapshot] of Object.entries(snapshots)) {
+		if (!snapshot || typeof snapshot !== 'object') continue;
+
+		const entitlement = number(snapshot, ['entitlement', 'entitlementRequests']);
+		const unlimited = snapshot.unlimited === true || entitlement === -1;
+		// Not included on this plan. Said with no bar rather than an empty one.
+		if (!unlimited && entitlement === 0) continue;
+		if (unlimited) continue;
+
+		const percent = usedPercent(snapshot, {
+			used: ['percent_used'],
+			remaining: ['percent_remaining', 'remainingPercentage'],
+		});
+
+		const left = number(snapshot, ['quota_remaining', 'remaining']);
+		const note = left != null && entitlement ? `${Math.max(0, Math.round(left))} of ${Math.round(entitlement)} left` : null;
+
+		if (percent == null) continue;
+		out.push(window_(names[key] ?? key.replace(/_/g, ' '), percent, reset, note));
+	}
+
+	// Fullest first, matching every other provider: what is about to stop you
+	// belongs at the top of the card.
+	return out.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1));
+}
+
+/**
+ * Cursor answers in three shapes and this reads all of them, because which one
+ * arrives depends on which door opened rather than on the account.
+ *
+ * The two current ones name their fields identically and differ only in how
+ * deeply they nest them, so both are looked for at every depth they have been
+ * seen at. The third belongs to accounts still on the pre-2026 plans that
+ * counted requests instead of spending tokens, and shares no field names at all.
+ *
+ * The pools are kept apart on purpose. One number for "Cursor usage" would
+ * average away the case the user actually needs to see: the included models
+ * barely touched while the pool that costs money is spent.
+ */
+export function cursorWindows(p) {
+	if (!p || typeof p !== 'object') return [];
+
+	const reset = when(p, ['billingCycleEnd', 'planUsage.billingCycleEnd', 'individualUsage.billingCycleEnd']);
+
+	const pools = [
+		{ label: 'included usage', paths: ['totalPercentUsed', 'planUsage.totalPercentUsed', 'individualUsage.plan.totalPercentUsed'] },
+		{ label: 'Cursor models', paths: ['autoPercentUsed', 'planUsage.autoPercentUsed', 'individualUsage.plan.autoPercentUsed'] },
+		{ label: 'other models', paths: ['apiPercentUsed', 'planUsage.apiPercentUsed', 'individualUsage.plan.apiPercentUsed'] },
+	];
+
+	const out = [];
+	for (const pool of pools) {
+		const percent = number(p, pool.paths);
+		if (percent == null) continue;
+		out.push(window_(pool.label, percent, reset));
+	}
+
+	if (out.length) return out;
+
+	// The pre-2026 shape: a bag of models, each with a request count against a
+	// ceiling. Recognised by that ceiling, since a model with none is a model on
+	// an unlimited plan and has no percentage to draw.
+	for (const [model, value] of Object.entries(p)) {
+		if (!value || typeof value !== 'object') continue;
+		const ceiling = number(value, ['maxRequestUsage']);
+		const used = number(value, ['numRequests']);
+		if (!ceiling || used == null) continue;
+		out.push(window_(model, (used / ceiling) * 100, when(p, ['startOfMonth']) ? null : null, `${used} of ${ceiling} requests`));
+	}
+
+	return out;
+}
+
+const BY_PROVIDER = { codex: codexWindows, claude: claudeWindows, copilot: copilotWindows, cursor: cursorWindows };
 
 export function windowsOf(account) {
 	if (!account?.payload) return [];

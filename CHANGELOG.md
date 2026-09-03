@@ -8,6 +8,16 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+- Watches GitHub Copilot accounts: chat, completions and premium requests
+  against the monthly credit allowance, signed in through the GitHub CLI
+- Watches Cursor accounts, each in its own copy of the editor, with the included
+  and paid-for model pools kept apart
+- Marks both as alpha: neither vendor publishes a contract for the numbers, so a
+  reading that stops making sense says so instead of drawing an empty bar
+- Signs an account in again in place, keeping its name, its sessions and its
+  separate instance — an expired login no longer means removing the account
+- Frees the Finish button on the code box, which signing in to Claude needs
+
 ## 0.2.2
 
 - Shows every action button by its icon, instead of only on hover

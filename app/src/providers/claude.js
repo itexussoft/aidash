@@ -14,7 +14,7 @@
 
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readClaudeCredentials, writeClaudeCredentials } from '../keychain.js';
+import { readClaudeCredentials, writeClaudeCredentials, stashClaudeCredentials } from '../keychain.js';
 import { locate, spawnable } from '../locate.js';
 import { claudeEnv } from '../claude-config.js';
 
@@ -167,4 +167,13 @@ export async function fetchUsage(configDir) {
 	return JSON.parse(text);
 }
 
-export const claude = { id: 'claude', name: 'Claude', findBinary, isAuthenticated, authStatus, login, fetchUsage };
+/**
+ * Clears this directory's credential, handing back the means to restore it.
+ *
+ * The registry calls this before signing an existing account in again; see
+ * `stashClaudeCredentials` for why starting from nothing is what makes the
+ * sign-in actually run.
+ */
+export const stashCredentials = (configDir) => stashClaudeCredentials(configDir);
+
+export const claude = { id: 'claude', name: 'Claude', findBinary, isAuthenticated, authStatus, login, stashCredentials, fetchUsage };

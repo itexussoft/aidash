@@ -1182,6 +1182,7 @@ button.ghost:hover:not(:disabled) {
 	font-size: 11.5px;
 	color: var(--faint);
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: center;
 	gap: var(--step-2);
@@ -1189,6 +1190,11 @@ button.ghost:hover:not(:disabled) {
 .foot-actions {
 	display: flex;
 	align-items: center;
+	justify-content: flex-end;
+	/* Four chips no longer fit one line in a narrow column, and a chip that wraps
+	   inside itself reads as three stacked words rather than one control. So the
+	   row wraps and the labels do not. */
+	flex-wrap: wrap;
 	gap: 6px;
 }
 
@@ -1202,6 +1208,7 @@ button.ghost:hover:not(:disabled) {
 .foot-actions button {
 	display: inline-flex;
 	align-items: center;
+	white-space: nowrap;
 	gap: 4px;
 	padding: 3px 8px 3px 6px;
 	border-radius: 99px;
@@ -1223,6 +1230,34 @@ button.ghost:hover:not(:disabled) {
 }
 .foot-actions .instance:hover {
 	background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+/*
+ * Quiet on a working card and amber on a failing one. Signing in again is a
+ * maintenance action while everything is fine, and the way out the moment it is
+ * not — so it earns attention only where "remove" used to be the only answer.
+ */
+.foot-actions .reauth {
+	color: var(--muted);
+	background: var(--track);
+}
+.foot-actions .reauth:hover {
+	color: var(--fg);
+	background: color-mix(in srgb, var(--fg) 12%, var(--track));
+}
+/*
+ * Marked from the card's own error rather than from `.card.err`, which is only
+ * worn by a card with nothing to show. An expired grant most often reads the
+ * other way round — yesterday's numbers still on screen, a refresh failure
+ * underneath them — and that is exactly the card this button is for.
+ */
+.foot-actions .reauth.urgent {
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 12%, transparent);
+	border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.foot-actions .reauth.urgent:hover {
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 20%, transparent);
 }
 .foot-actions .remove {
 	color: var(--crit);
@@ -1890,4 +1925,63 @@ dialog menu {
 .about-legal strong {
 	color: var(--fg);
 	font-weight: 600;
+}
+
+/* ------------------------------------------------------- alpha providers */
+
+/*
+ * Copilot and Cursor read endpoints their vendors publish no contract for, so
+ * their numbers carry a warning wherever they appear — on the card, on the
+ * group heading above it, and in the picker before an account is even added.
+ *
+ * Amber rather than red: the reading is believed correct, and red would put it
+ * beside "limit reached", which is a statement about the account rather than
+ * about how much to trust the app.
+ */
+.alpha {
+	display: inline-block;
+	font-size: 9.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--warn);
+	background: color-mix(in srgb, var(--warn) 12%, transparent);
+	border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+	border-radius: 99px;
+	padding: 1px 6px;
+	margin-left: 6px;
+	white-space: nowrap;
+	vertical-align: 1px;
+	cursor: help;
+}
+
+/*
+ * A window that arrived without a reading.
+ *
+ * The track is drawn empty and struck through rather than filled to zero: an
+ * empty bar and a zero bar look identical at a glance, and only one of them is
+ * honest about a payload we stopped understanding.
+ */
+.meter.unread .meter-val {
+	color: var(--faint);
+	font-style: italic;
+	font-variant-numeric: normal;
+}
+.meter.unread .bar {
+	background: repeating-linear-gradient(135deg, var(--track), var(--track) 4px, transparent 4px, transparent 8px);
+}
+
+/* The one-time code GitHub asks for. Big, because it is copied by eye. */
+.device-code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 22px;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	color: var(--fg);
+	background: var(--track);
+	border-radius: var(--radius-sm);
+	padding: 10px 14px;
+	margin: var(--step-2) 0;
+	text-align: center;
+	user-select: all;
 }

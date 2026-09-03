@@ -13,7 +13,12 @@
  */
 
 import { spawn } from 'node:child_process';
+import { readFile, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { locate, spawnable } from '../locate.js';
+
+/** Where the binary keeps this account's credential, inside its CODEX_HOME. */
+const authFile = (configDir) => join(configDir, 'auth.json');
 
 export function findBinary() {
 	return locate('codex');
@@ -174,4 +179,28 @@ export async function fetchUsage(configDir) {
 	});
 }
 
-export const codex = { id: 'codex', name: 'Codex', findBinary, isAuthenticated, login, fetchUsage };
+/**
+ * Clears this directory's credential, handing back the means to restore it.
+ *
+ * Signing in again has to start from nothing, and here that is not a nicety:
+ * `login` above decides it is done as soon as `getAuthStatus` reports a method,
+ * so against a directory that is still signed in it would return on the first
+ * poll — two seconds, no browser, the same account back. The old file is kept
+ * in hand until the new one lands, so an attempt the user abandons leaves the
+ * account exactly as it was.
+ */
+export async function stashCredentials(configDir) {
+	let saved = null;
+	try {
+		saved = await readFile(authFile(configDir), 'utf8');
+	} catch {
+		/* nothing stored for this directory */
+	}
+	await rm(authFile(configDir), { force: true });
+
+	return async () => {
+		if (saved !== null) await writeFile(authFile(configDir), saved, { mode: 0o600 });
+	};
+}
+
+export const codex = { id: 'codex', name: 'Codex', findBinary, isAuthenticated, login, stashCredentials, fetchUsage };

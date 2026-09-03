@@ -23,6 +23,10 @@ export const icons = {
 	// Two overlapping frames — a second copy of the same window, which is
 	// literally what a separate instance is.
 	copy: (size) => svg('<rect x="3" y="5.5" width="9" height="9" rx="1.6"/><path d="M6 5.5V3.6C6 3 6.5 2.5 7 2.5h6.4c.6 0 1.1.5 1.1 1.1v6.4c0 .6-.5 1-1.1 1H12"/>', size),
+	// A key: what "sign in again" hands over, and the one glyph in this set that
+	// says credentials rather than records.
+	key: (size) =>
+		svg('<circle cx="6.4" cy="11.6" r="3.4"/><path d="M8.8 9.2 15.4 2.6"/><path d="M12.2 5.8l1.8 1.8"/><path d="M14 4l1.8 1.8"/>', size),
 	folder: (size) => svg('<path d="M2.5 4.8c0-.7.6-1.3 1.3-1.3h3l1.4 1.6h6c.7 0 1.3.6 1.3 1.3v6.3c0 .7-.6 1.3-1.3 1.3H3.8c-.7 0-1.3-.6-1.3-1.3z"/>', size),
 	folderPlus: (size) => svg('<path d="M2.5 4.8c0-.7.6-1.3 1.3-1.3h3l1.4 1.6h6c.7 0 1.3.6 1.3 1.3v6.3c0 .7-.6 1.3-1.3 1.3H3.8c-.7 0-1.3-.6-1.3-1.3z"/><path d="M9 8v4M7 10h4"/>', size),
 	// The familiar git-graph merge: a branch curving in to join a trunk that

@@ -83,8 +83,10 @@ function downloadButton(platform, downloads, { primary = false } = {}) {
 const downloadRow = (downloads) =>
 	`<div class="downloads">${PLATFORMS.map((p, i) => downloadButton(p, downloads, { primary: i === 0 })).join('')}</div>`;
 
-const card = (glyph, title, body) =>
-	`<div class="card" data-reveal><span class="ico">${icon(glyph)}</span><h3>${title}</h3><p>${body}</p></div>`;
+const card = (glyph, title, body, alpha = false) =>
+	`<div class="card" data-reveal><span class="ico">${icon(glyph)}</span><h3>${title}${
+		alpha ? '<span class="alpha" title="Read from an endpoint the vendor publishes no contract for. Believed correct, still being proved out.">alpha</span>' : ''
+	}</h3><p>${body}</p></div>`;
 
 /**
  * The favicon, as a data URI.
@@ -101,7 +103,7 @@ const FAVICON =
 	);
 
 const DESCRIPTION =
-	'A desktop dashboard showing how much of each Claude and Codex account you have used, and a tool for moving Claude Code sessions between accounts. Credentials never leave your machine.';
+	'A desktop dashboard showing how much of each Claude, Codex, Copilot and Cursor account you have used, and a tool for moving Claude Code sessions between accounts. Credentials never leave your machine.';
 
 export function renderLanding({ version, downloads, repoUrl }) {
 	const anyDownload = PLATFORMS.some((p) => downloads?.[p.key]);
@@ -111,7 +113,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>aidash — one screen for every Claude and Codex quota</title>
+<title>aidash — one screen for every Claude, Codex, Copilot and Cursor quota</title>
 <meta name="description" content="${DESCRIPTION}">
 <link rel="canonical" href="${SITE}/">
 <link rel="icon" href="${FAVICON}">
@@ -319,6 +321,15 @@ export function renderLanding({ version, downloads, repoUrl }) {
   .card h3{font-size:17.5px; font-weight:600; margin:0 0 8px; letter-spacing:-.008em}
   .card p{margin:0; color:var(--muted); font-size:15px}
 
+  /* Amber rather than red: the reading is believed correct, and red would read
+     as "broken" beside a card describing a working feature. */
+  .alpha{
+    display:inline-block; margin-left:8px; padding:1px 7px;
+    font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:#b8801f; background:rgb(184 128 31 / .12); border:1px solid rgb(184 128 31 / .35);
+    border-radius:99px; vertical-align:3px; cursor:help;
+  }
+
   /* ------------------------------------------------------------------ steps */
   .steps{padding:clamp(52px,6vw,72px) 0}
   .steps-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:0}
@@ -415,7 +426,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
       <span class="pill"><i></i>Version ${version} · free and <a href="${repoUrl}">open source</a></span>
       <h1>Every AI quota on one screen</h1>
       <p class="sub">
-        Run several Claude and Codex accounts and you lose track of which one is about to stop working.
+        Run several Claude, Codex, Copilot and Cursor accounts and you lose track of which one is about to stop working.
         aidash shows all of them at once — how much of each limit is gone, and when it resets.
       </p>
       <div id="download">${downloadRow(downloads)}</div>
@@ -460,10 +471,14 @@ export function renderLanding({ version, downloads, repoUrl }) {
     <p class="lede">
       Each provider measures usage its own way, and any single limit can stop you. aidash shows them as
       the provider reports them rather than flattening everything into one misleading percentage.
+      Copilot and Cursor are marked <b>alpha</b>: neither publishes a contract for the numbers we read,
+      so a reading can move under us — and when it does, the bar says so instead of guessing.
     </p>
     <div class="cards">
       ${card('layers', 'Claude', 'Session, weekly and per-model windows, each with its own reset time and its own bar.')}
       ${card('gauge', 'Codex', 'The shared weekly window <em>and</em> your personal spend control, which run out independently.')}
+      ${card('code', 'Copilot', 'Chat, completions and premium requests against the monthly credit allowance, with the date it renews.', true)}
+      ${card('transfer', 'Cursor', 'Both spending pools kept apart — the included models and the ones billed on top — against the billing cycle.', true)}
       ${card('sort', 'Sorted by urgency', 'Whatever is closest to running out sits at the top, in the colour that says how close.')}
     </div>
     <p class="note">
@@ -534,7 +549,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
     <div class="foot">
       <div>
         ${logoLockup()}
-        <p>One screen for every Claude and Codex quota, and a way to move sessions between the accounts you already have.</p>
+        <p>One screen for every Claude, Codex, Copilot and Cursor quota, and a way to move sessions between the accounts you already have.</p>
       </div>
       <div>
         <h4>Product</h4>
@@ -553,7 +568,7 @@ export function renderLanding({ version, downloads, repoUrl }) {
     <div class="foot-base">
       <span>aidash ${version} — an <a href="https://itexus.com">Itexus</a> tool</span>
       <span class="nav-spacer"></span>
-      <span>Claude and Codex are trademarks of their respective owners.</span>
+      <span>Claude, Codex, Copilot and Cursor are trademarks of their respective owners.</span>
     </div>
   </div>
 </footer>

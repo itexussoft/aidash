@@ -9,13 +9,14 @@
  */
 
 import { renderCard, refreshLabel, staleness, toEpochMs, relativeTime, barColour } from './renderer/render.js';
-import { tightest, rankByHeadroom, upcomingResets } from './src/windows.js';
+import { tightest, rankByHeadroom, upcomingResets, copilotWindows, cursorWindows } from './src/windows.js';
 import { Alerts, crossings, notableResets, MAX_DELAY, NOTIFY_ABOVE } from './src/alerts.js';
 import { bridgeState, HERE, ELSEWHERE, SHARED } from './src/bridges.js';
 import { proposeOwners, collapse } from './src/matching.js';
 import { outlookHtml, position } from './renderer/outlook.js';
 import { encodeCwd } from './src/sessions.js';
 import { spawnable } from './src/locate.js';
+import { signedInAfresh } from './src/providers/cursor.js';
 
 let failures = 0;
 
@@ -141,6 +142,99 @@ check('inactive windows marked', claudeCard.includes('inactive'));
 check('extra usage state shown', claudeCard.includes('extra usage: off'));
 check('identity from enrolment', claudeCard.includes('claude.dev@itexus.com') && claudeCard.includes('max'));
 
+
+/* -------------------------------------------------- copilot and cursor */
+
+// Both read endpoints with no published contract, so what is checked here is
+// mostly what happens when the contract we inferred stops holding.
+console.log('\ncopilot');
+
+// Verbatim from a live account, trimmed to the fields that are read.
+const copilotPayload = {
+	login: 'someone',
+	copilot_plan: 'individual',
+	access_type_sku: 'free_limited_copilot',
+	token_based_billing: true,
+	quota_reset_date: '2026-10-01',
+	quota_reset_date_utc: '2026-10-01T00:00:00.000Z',
+	quota_snapshots: {
+		chat: { quota_id: 'chat', entitlement: 200, remaining: 150, quota_remaining: 150, percent_remaining: 75, unlimited: false, has_quota: false, credits_used: 0 },
+		completions: { entitlement: 2000, remaining: 2000, quota_remaining: 2000, percent_remaining: 100, unlimited: false, has_quota: false },
+		premium_interactions: { entitlement: 0, remaining: 0, quota_remaining: 0, percent_remaining: 0, unlimited: false, has_quota: false },
+	},
+	_via: 'gh api',
+};
+
+const copilotCard = card({ provider: 'copilot', label: 'Copilot', payload: copilotPayload, lastOkAt: Date.now() });
+check('remaining is flipped into used', copilotCard.includes('25%'));
+check('the count beside the bar survives', copilotCard.includes('150 of 200 left'));
+// The trap: under credit billing every snapshot says has_quota false, so reading
+// it as "nothing here" would blank an account that is perfectly readable.
+check('has_quota false does not hide the account', copilotCard.includes('chat'));
+// The other trap: entitlement 0 means "not on this plan", not "all used up".
+check('a limit the plan does not include is left out', !copilotCard.includes('premium requests'));
+check('the monthly reset is read from the date field', /resets in \d+[hdm]/.test(copilotCard));
+check('the transport that answered is named', copilotCard.includes('gh api'));
+
+check(
+	'an unlimited limit draws no bar',
+	copilotWindows({ quota_snapshots: { chat: { entitlement: -1, percent_remaining: 100 } } }).length === 0,
+);
+check(
+	'a company pool is called out as shared',
+	card({ provider: 'copilot', label: 'C', payload: { ...copilotPayload, copilot_plan: 'business' }, lastOkAt: Date.now() }).includes('shared pool'),
+);
+
+console.log('\ncursor (three transports, three shapes)');
+
+const rpcShape = { billingCycleEnd: isoInHours(72), planUsage: { totalPercentUsed: 98.5, autoPercentUsed: 42, apiPercentUsed: 100, used: 1850, limit: 2000 }, _via: 'rpc' };
+const rpcCard = card({ provider: 'cursor', label: 'Cursor', payload: rpcShape, lastOkAt: Date.now() });
+check('the two pools are kept apart', rpcCard.includes('Cursor models') && rpcCard.includes('other models'));
+check('the headline pool is read', rpcCard.includes('98.5%') || rpcCard.includes('99%'));
+check('money is shown in dollars, not cents', rpcCard.includes('$18.50 of $20.00'));
+
+// The same fields one level deeper, which is the only difference between the
+// dashboard's answer and the RPC one.
+check(
+	'the dashboard shape reads the same fields deeper down',
+	cursorWindows({ billingCycleEnd: isoInHours(72), individualUsage: { plan: { totalPercentUsed: 12 } } })[0]?.percent === 12,
+);
+
+// Accounts left on the plans that counted requests share no field names at all.
+const legacy = cursorWindows({ 'gpt-4': { numRequests: 120, maxRequestUsage: 500 } });
+check('the pre-2026 request shape still reads', Math.round(legacy[0]?.percent) === 24);
+check('and says what the count was', legacy[0]?.note === '120 of 500 requests');
+
+/* ------------------------------------------------- when the shape moves */
+
+// The whole point of the tolerant reader: the failure that matters is not a
+// crash, it is a confident wrong answer.
+console.log('\nunreadable payloads');
+
+check('a renamed Copilot field yields no window', copilotWindows({ quota_snapshots: { chat: { allowance: 200, left: 150 } } }).length === 0);
+check('a renamed Cursor field yields no window', cursorWindows({ billingCycleEnd: isoInHours(72), planUsage: { spentFraction: 0.4 } }).length === 0);
+check('an empty snapshot yields no window', copilotWindows({ quota_snapshots: { chat: {} } }).length === 0);
+
+// The one that would be most expensive to get wrong, stated as its own check
+// because it is the reason the tolerant reader exists at all.
+const renamed = card({ provider: 'copilot', label: 'C', payload: { quota_snapshots: { chat: { allowance: 200 } } }, lastOkAt: Date.now() });
+check('a payload we no longer understand never renders as 0%', !renamed.includes('>0%<'));
+check('and says so instead', renamed.includes('no usage windows recognised'));
+
+// A window that reaches the renderer without a reading is the last line of
+// defence, and it must not draw a bar either.
+const unread = renderCard({ id: 'u', provider: 'claude', label: 'U', email: null, plan: null, lastOkAt: Date.now(), lastError: null,
+	payload: { limits: [{ kind: 'session', percent: null, resets_at: null }] } });
+check('a window with no reading is drawn as unread, not as zero', !unread.includes('>0%<'));
+
+// Signing in again against a profile that is still signed in: the rule that
+// makes the same code serve a first sign-in and a repeat one.
+console.log('\nsigning in again');
+check('a first sign-in counts as soon as a token appears', signedInAfresh(null, 'tok-1'));
+check('an unchanged token does not count', !signedInAfresh('tok-1', 'tok-1'));
+check('a replaced token does', signedInAfresh('tok-1', 'tok-2'));
+check('and no token never does', !signedInAfresh('tok-1', null) && !signedInAfresh(null, null));
+
 /* ------------------------------------------------------------ card states */
 
 console.log('\ncard states');
@@ -149,13 +243,30 @@ check('freshly added card explains itself', pending.includes('Waiting for the fi
 check('pending card is not an error', !pending.includes('card err'));
 check('pending card can be removed', pending.includes('data-id="a"'));
 check('every card offers rename alongside remove', ['button class="rename"', 'button class="remove"'].every((s) => pending.includes(s)));
+check('every card offers a way back in short of removal', pending.includes('button class="reauth"'));
+check('a card with nothing wrong keeps it quiet', !pending.includes('reauth urgent'));
+// The card in the report that prompted this: yesterday's numbers still on
+// screen, the refresh failing underneath them. It wears no error class, so
+// marking the button from that class alone would have left this one plain.
+check(
+	'a card still showing figures marks it when the refresh failed',
+	card({ payload: codexPayload, lastOkAt: Date.now(), lastError: 'could not refresh: HTTP 400' }).includes('reauth urgent'),
+);
+check('sign in again carries the account it acts on', codexCard.includes('class="reauth" data-id="a"'));
+// The tooltip has to name the client that will actually open, because that is
+// the window the user is about to be handed to.
+check('sign in again names the client it hands over to', claudeCard.includes('again through Claude Code'));
 check('rename carries the current label for the dialog', codexCard.includes('class="rename" data-id="a" data-label="Codex"'));
 check('a label with markup is escaped on the rename button', card({ label: '<b>x</b>' }).includes('data-label="&lt;b&gt;x&lt;/b&gt;"'));
 
 const broken = card({ label: 'Broken', lastError: 'no stored credentials — re-authorize this account' });
 check('failed card shows the reason', broken.includes('no stored credentials'));
 check('failed card styled as an error', broken.includes('card err'));
-check('failed card says how to recover', broken.includes('add it again'));
+// The old advice was "remove it and add it again", which cost the account its
+// id — and with it any separate instance and the sessions listed under it.
+check('failed card says how to recover', broken.includes('Sign in again to replace the stored login'));
+check('failed card offers the recovery it describes', broken.includes('button class="reauth urgent"'));
+check('failed card no longer sends anyone through removal', !broken.includes('add it again'));
 
 const stale = card({ provider: 'codex', label: 'Stale', payload: codexPayload, lastOkAt: Date.now() - 3600000, lastError: 'usage request failed: HTTP 500' });
 check('stale data still rendered alongside the error', stale.includes('Weekly window') && stale.includes('HTTP 500'));

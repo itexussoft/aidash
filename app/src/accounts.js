@@ -2,9 +2,16 @@
  * Account registry and the refresh cycle.
  *
  * The app stores no secrets. Each account owns a directory that the vendor's
- * own client writes its credentials into (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`,
- * plus the macOS keychain for Claude), and this file only remembers which
- * directory belongs to which account, along with the last snapshot.
+ * own client writes its credentials into — `CODEX_HOME`, `CLAUDE_CONFIG_DIR`,
+ * `GH_CONFIG_DIR` for Copilot, and for Cursor the `--user-data-dir` of its own
+ * copy of the editor — plus the macOS keychain for Claude. This file only
+ * remembers which directory belongs to which account, along with the last
+ * snapshot.
+ *
+ * That one directory per account is also what makes several accounts of the
+ * same provider possible at all. None of these clients holds more than one
+ * sign-in; giving each its own directory is what turns a single-account client
+ * into as many accounts as there are directories.
  *
  * Snapshots are kept verbatim: the two providers describe usage in genuinely
  * different terms, and normalising on the way in would only lose detail and
@@ -16,6 +23,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { codex } from './providers/codex.js';
 import { claude } from './providers/claude.js';
+import { copilot } from './providers/copilot.js';
+import { cursor } from './providers/cursor.js';
 import { DEFAULT_ROOT, MAIN_ROOT } from './sessions.js';
 import { findDesktop, indexIn, instanceDirIn } from './instances.js';
 
@@ -25,7 +34,7 @@ const exists = (p) =>
 		() => false,
 	);
 
-export const PROVIDERS = { codex, claude };
+export const PROVIDERS = { codex, claude, copilot, cursor };
 
 /**
  * Both on by default.
@@ -260,6 +269,62 @@ export class AccountStore {
 	}
 
 	/**
+	 * Signs an existing account in again, in place.
+	 *
+	 * A grant expires or is revoked, and until now the only way back was to
+	 * remove the account and add it again. Those are not the same act: the id
+	 * names the credential directory and the account's separate copy of Claude
+	 * Desktop, so removing takes both with it, and re-adding under the same name
+	 * mints a fresh id. A signed-in second window and the sessions listed under
+	 * it, thrown away to replace a dead token.
+	 *
+	 * Here the sign-in runs against the directory the account already owns, so
+	 * everything keyed to the id survives it.
+	 */
+	async reauthorize(id, hooks = {}) {
+		const account = this.state.accounts.find((a) => a.id === id);
+		if (!account) throw new Error('no such account');
+
+		const adapter = PROVIDERS[account.provider];
+		if (!adapter) throw new Error(`unknown provider: ${account.provider}`);
+
+		const dir = this.dirFor(id);
+		await mkdir(dir, { recursive: true });
+
+		// A directory that still holds a credential makes either client decide the
+		// sign-in is already done, so it is cleared first — and put back when the
+		// attempt does not land, which is what makes cancelling one free.
+		const restore = await adapter.stashCredentials?.(dir);
+
+		let identity;
+		try {
+			identity = await adapter.login(dir, hooks);
+		} catch (err) {
+			await restore?.();
+			throw err;
+		}
+
+		const before = account.email;
+		account.email = identity?.email ?? null;
+		account.plan = identity?.plan ?? null;
+		// The error goes now rather than at the next refresh, and the last reading
+		// with it: those numbers describe a grant that has just been replaced, and
+		// a card cannot both say it is signed in afresh and show what the old
+		// login last saw.
+		account.lastError = null;
+		account.payload = null;
+		account.lastOkAt = null;
+		account.reauthorizedAt = Date.now();
+		await this.save();
+
+		// Nothing here stops someone signing in as a different person, and
+		// occasionally that is the intent. Whether it was is worth saying out
+		// loud, because everything keyed to the id — the folder, the instance, the
+		// sessions listed under it — stayed exactly where it was.
+		return { account, switched: Boolean(before && account.email && before !== account.email) };
+	}
+
+	/**
 	 * Changes what an account is called.
 	 *
 	 * Only the label moves. The id is what names the directory holding the
@@ -330,6 +395,11 @@ export class AccountStore {
 		return {
 			codex: Boolean(codex.findBinary()),
 			claude: Boolean(claude.findBinary()),
+			// Copilot signs in through the GitHub CLI and Cursor through its own
+			// editor, so what has to be present is that client rather than anything
+			// named after the provider.
+			copilot: Boolean(copilot.findBinary()),
+			cursor: Boolean(cursor.findBinary()),
 			// A separate instance is a second copy of the desktop app, so the button
 			// offering one has to know whether there is a first.
 			claudeDesktop: Boolean(findDesktop()),

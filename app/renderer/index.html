@@ -298,7 +298,7 @@
 		<!-- Add-account flow -->
 		<dialog id="add-dialog">
 			<form method="dialog" id="add-form">
-				<h2>Add an account</h2>
+				<h2 id="add-title">Add an account</h2>
 
 				<div class="step" data-step="choose">
 					<label>Provider</label>
@@ -315,10 +315,39 @@
 					<button type="button" class="linklike" id="auth-url"></button>
 				</div>
 
+				<!--
+					GitHub's device flow. The code is ours to show and theirs to type,
+					which is the reverse of Claude's, so it gets its own step rather
+					than reusing the box that asks for one.
+				-->
+				<div class="step" data-step="device" hidden>
+					<p class="status">Type this code into GitHub.</p>
+					<p class="device-code" id="device-code"></p>
+					<p class="hint">Your browser has opened at the page that asks for it. If it did not:</p>
+					<button type="button" class="linklike" id="device-url"></button>
+				</div>
+
+				<!-- A sign-in happening inside another application we just launched. -->
+				<div class="step" data-step="external" hidden>
+					<p class="status" id="external-note"></p>
+					<p class="hint">This will finish on its own once the sign-in lands.</p>
+				</div>
+
 				<div class="step" data-step="code" hidden>
 					<p class="status">Almost there.</p>
 					<label for="code">Paste the code from the browser</label>
 					<input id="code" name="code" autocomplete="off" spellcheck="false" />
+				</div>
+
+				<!--
+					Where a failed re-authorization lands. Adding an account can go back
+					to the provider and the name, but signing an existing one in again
+					has neither to correct — only the attempt itself, which is what this
+					step offers.
+				-->
+				<div class="step" data-step="again" hidden>
+					<p class="status">That sign-in did not finish.</p>
+					<p class="hint">Nothing changed: the account still holds the login it had. Try again, or close this and come back to it.</p>
 				</div>
 
 				<p class="error" id="add-error" hidden></p>

@@ -266,10 +266,15 @@ ipcMain.handle('shell:open', (_event, url) => {
 });
 
 /**
- * Starts a sign-in. Progress arrives on 'login:progress' rather than as a
- * return value, because the flow is interactive and can take minutes.
+ * Runs an interactive sign-in and reports it to the window.
+ *
+ * Adding an account and signing an existing one in again are the same flow over
+ * a different destination, so both come through here — and both are held to one
+ * at a time, since the two would otherwise race for the same code box. Progress
+ * arrives on 'login:progress' rather than as a return value, because the flow
+ * can take minutes and blocks mid-way waiting for the browser.
  */
-ipcMain.handle('accounts:add', async (_event, { provider, label }) => {
+async function runSignIn(body) {
 	if (pendingLogin) throw new Error('a sign-in is already in progress');
 
 	const controller = new AbortController();
@@ -277,27 +282,56 @@ ipcMain.handle('accounts:add', async (_event, { provider, label }) => {
 	pendingLogin = { controller, supplyCode: (code) => resolveCode?.(code) };
 
 	try {
-		const account = await store.add(
-			{ provider, label },
-			{
-				signal: controller.signal,
-				onUrl: (url) => {
-					shell.openExternal(url);
-					send('login:progress', { stage: 'browser', url });
-				},
-				onNeedCode: () =>
-					new Promise((resolve, reject) => {
-						resolveCode = resolve;
-						send('login:progress', { stage: 'code' });
-						controller.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
-					}),
+		return await body({
+			signal: controller.signal,
+			onUrl: (url) => {
+				shell.openExternal(url);
+				send('login:progress', { stage: 'browser', url });
 			},
-		);
-		send('login:progress', { stage: 'done', account });
-		return account;
+			// GitHub's device flow runs the other way round to Claude's: the app is
+			// given the code and the browser asks for it. The page is opened here
+			// rather than by the provider so that showing the code and opening the
+			// page stay one event, and the interface never replaces the step
+			// carrying the code with one that does not.
+			onDeviceCode: ({ code, url }) => {
+				send('login:progress', { stage: 'device', code, url });
+				shell.openExternal(url);
+			},
+			// A sign-in that happens inside another application entirely, which the
+			// provider has just launched. Nothing to open and no code to pass — only
+			// something to say, so the window does not look stuck.
+			onExternal: ({ note }) => send('login:progress', { stage: 'external', note }),
+			onNeedCode: () =>
+				new Promise((resolve, reject) => {
+					resolveCode = resolve;
+					send('login:progress', { stage: 'code' });
+					controller.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+				}),
+		});
 	} finally {
 		pendingLogin = null;
 	}
+}
+
+ipcMain.handle('accounts:add', async (_event, { provider, label }) => {
+	const account = await runSignIn((hooks) => store.add({ provider, label }, hooks));
+	send('login:progress', { stage: 'done', account });
+	return account;
+});
+
+/**
+ * Signs an existing account in again, keeping its id.
+ *
+ * Returns whether the sign-in landed on a different person as well as the new
+ * state: the card, the credential folder and any separate instance all stay
+ * with the id, so a swapped identity is worth saying rather than leaving to be
+ * noticed on the card later.
+ */
+ipcMain.handle('accounts:reauthorize', async (_event, id) => {
+	const { account, switched } = await runSignIn((hooks) => store.reauthorize(id, hooks));
+	send('login:progress', { stage: 'done', account });
+	republish();
+	return { state: fullState(), account, switched };
 });
 
 ipcMain.handle('accounts:supplyCode', (_event, code) => {
@@ -305,7 +339,7 @@ ipcMain.handle('accounts:supplyCode', (_event, code) => {
 	pendingLogin.supplyCode(String(code).trim());
 });
 
-ipcMain.handle('accounts:cancelAdd', () => {
+ipcMain.handle('accounts:cancelSignIn', () => {
 	pendingLogin?.controller.abort();
 	pendingLogin = null;
 });

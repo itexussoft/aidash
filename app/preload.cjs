@@ -12,8 +12,11 @@ contextBridge.exposeInMainWorld('aidash', {
 	refresh: () => ipcRenderer.invoke('accounts:refresh'),
 
 	addAccount: (provider, label) => ipcRenderer.invoke('accounts:add', { provider, label }),
+	// Same flow as adding, aimed at an account that already exists: the id, its
+	// credential folder and its separate instance all stay put.
+	reauthorizeAccount: (id) => ipcRenderer.invoke('accounts:reauthorize', id),
 	supplyCode: (code) => ipcRenderer.invoke('accounts:supplyCode', code),
-	cancelAdd: () => ipcRenderer.invoke('accounts:cancelAdd'),
+	cancelSignIn: () => ipcRenderer.invoke('accounts:cancelSignIn'),
 
 	renameAccount: (id, label) => ipcRenderer.invoke('accounts:rename', { id, label }),
 	confirmRemove: (label) => ipcRenderer.invoke('accounts:confirmRemove', label),

@@ -13,7 +13,7 @@
  * visible rather than lost.
  */
 
-import { codexWindows, claudeWindows, toEpochMs } from '../src/windows.js';
+import { codexWindows, claudeWindows, copilotWindows, cursorWindows, toEpochMs } from '../src/windows.js';
 import { icon } from './icons.js';
 
 export { toEpochMs };
@@ -78,6 +78,21 @@ export function barColour(percent) {
 }
 
 function meter(label, percent, resetAt, note, severityOverride) {
+	// The last line of defence against a bar that lies. A window with no reading
+	// gets no bar at all: an empty track says "we do not know", where a bar at
+	// zero would say "nothing used" to anyone glancing at the card.
+	if (percent == null) {
+		return `
+    <div class="meter unread">
+      <div class="meter-head">
+        <span class="meter-label">${escapeHtml(label)}</span>
+        <span class="meter-val">not read</span>
+      </div>
+      <div class="bar"><i data-pct="0"></i></div>
+      <div class="meter-foot">${note ? `<span class="note">${escapeHtml(note)}</span>` : ''}</div>
+    </div>`;
+	}
+
 	const raw = Number(percent) || 0;
 	const pct = Math.max(0, Math.min(100, raw));
 	// Values above 100 are real — a personal spend control read 887% — so show
@@ -171,7 +186,79 @@ function renderClaude(p) {
 	return { meters, facts };
 }
 
-const RENDERERS = { codex: renderCodex, claude: renderClaude };
+
+/**
+ * Providers still being proved out.
+ *
+ * Both read endpoints their vendors publish no contract for, so a reading can
+ * be wrong in a way the app cannot detect — and a number with no warning on it
+ * is trusted exactly as much as one that has been checked for a year. The badge
+ * is the difference, and it lives here because it is a statement about how much
+ * to believe the card, which is the card's business.
+ */
+export const ALPHA_PROVIDERS = new Set(['copilot', 'cursor']);
+
+/**
+ * Copilot's card is mostly its windows; what is left is the part that has no
+ * percentage — which plan is paying, and the two states where the meters alone
+ * would mislead.
+ */
+function renderCopilot(p) {
+	const meters = asMeters(copilotWindows(p));
+	const facts = [];
+
+	const plan = p?.copilot_plan ?? p?.access_type_sku;
+	if (plan) facts.push(`plan: ${String(plan).replace(/_/g, ' ')}`);
+
+	const credits = p?.quota_snapshots?.premium_models?.credits_used ?? p?.quota_snapshots?.premium_interactions?.credits_used;
+	if (credits) facts.push(`credits used: ${credits}`);
+
+	// A seat on a company plan draws from a pool the whole organisation shares,
+	// so its "remaining" is the organisation's and not this account's. Said
+	// plainly, because the bar above it looks personal and is not.
+	if (/business|enterprise/i.test(String(p?.copilot_plan ?? ''))) {
+		facts.push('company plan — the allowance shown is the organisation’s shared pool, not this seat’s');
+	}
+
+	const unlimited = Object.entries(p?.quota_snapshots ?? {})
+		.filter(([, s]) => s?.unlimited === true || Number(s?.entitlement) === -1)
+		.map(([key]) => key.replace(/_/g, ' '));
+	if (unlimited.length) facts.push(`unlimited: ${unlimited.join(', ')}`);
+
+	if (!meters) facts.push('no usage windows recognised — see raw payload');
+	if (p?._via) facts.push(`read via ${p._via}`);
+
+	return { meters, facts };
+}
+
+/**
+ * Cursor's card names the door that answered, which no other provider needs to.
+ * Three transports can serve this payload and they do not all carry the same
+ * fields, so "which one was it" is the first question worth asking when a number
+ * looks wrong.
+ */
+function renderCursor(p) {
+	const meters = asMeters(cursorWindows(p));
+	const facts = [];
+
+	const plan = p?.membershipType ?? p?.individualUsage?.membershipType;
+	if (plan) facts.push(`plan: ${plan}`);
+
+	// Money is carried in cents by the dashboard and left out entirely by some
+	// tiers, so it is shown when it is real and skipped without comment when not.
+	const used = Number(p?.individualUsage?.plan?.used ?? p?.planUsage?.used);
+	const limit = Number(p?.individualUsage?.plan?.limit ?? p?.planUsage?.limit);
+	if (Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
+		facts.push(`spent: $${(used / 100).toFixed(2)} of $${(limit / 100).toFixed(2)}`);
+	}
+
+	if (!meters) facts.push('no usage windows recognised — see raw payload');
+	if (p?._via) facts.push(`read via ${p._via}`);
+
+	return { meters, facts };
+}
+
+const RENDERERS = { codex: renderCodex, claude: renderClaude, copilot: renderCopilot, cursor: renderCursor };
 
 export function renderCard(account, availability = {}) {
 	const { id, provider, label, email, plan, payload, lastOkAt, lastError } = account;
@@ -185,6 +272,8 @@ export function renderCard(account, availability = {}) {
 			: '';
 	const actions =
 		instance +
+		`<button class="reauth${lastError ? ' urgent' : ''}" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}" data-provider="${escapeHtml(provider)}"
+           title="Signs in to this account again through ${escapeHtml(provider === 'claude' ? 'Claude Code' : 'Codex')}, replacing the stored login. The name, the session history and any separate instance stay as they are.">${icon('key')}<span>sign in again</span></button>` +
 		`<button class="rename" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">${icon('pencil')}<span>rename</span></button>` +
 		`<button class="remove" data-id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">${icon('trash')}<span>remove</span></button>`;
 	const identity = [email ?? payload?.email ?? payload?.account?.email, plan ?? payload?.plan_type ?? payload?.account?.planType]
@@ -198,12 +287,13 @@ export function renderCard(account, availability = {}) {
         ${identity ? `<p class="ident">${escapeHtml(identity)}</p>` : ''}
       </div>
       <span class="tag ${escapeHtml(provider)}">${escapeHtml(provider)}</span>
+      ${ALPHA_PROVIDERS.has(provider) ? '<span class="alpha" title="This provider reads an endpoint its vendor publishes no contract for. The numbers are believed correct but are still being proved out — check them against the vendor before relying on them.">alpha</span>' : ''}
     </header>`;
 
 	if (lastError && !payload) {
 		return `<article class="card err">${header}
       <p class="error">${escapeHtml(lastError)}</p>
-      <p class="muted">Remove it and add it again to sign in afresh.</p>
+      <p class="muted">Sign in again to replace the stored login — nothing else about the account changes.</p>
       <footer><span>never reported</span><span class="foot-actions">${actions}</span></footer>
     </article>`;
 	}

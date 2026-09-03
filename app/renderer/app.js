@@ -5,7 +5,7 @@
  * no access to credentials, processes or the filesystem.
  */
 
-import { renderCard, refreshLabel, staleness, escapeHtml, applyBarWidths } from './render.js';
+import { renderCard, refreshLabel, staleness, escapeHtml, applyBarWidths, ALPHA_PROVIDERS } from './render.js';
 import { outlookHtml, applyOutlook } from './outlook.js';
 import { rescan as rescanSessions } from './utils.js';
 import { busy, done, failed, reason } from './notify.js';
@@ -38,6 +38,7 @@ const addError = $('#add-error');
 const nextBtn = $('#add-next');
 const cancelBtn = $('#add-cancel');
 const authUrlBtn = $('#auth-url');
+const dialogTitle = $('#add-title');
 
 let state = { accounts: [], lastRefreshAt: null, availability: {} };
 
@@ -60,6 +61,9 @@ function toggleGroup(section) {
 }
 let chosenProvider = null;
 let addInFlight = null;
+// Which account the dialog is signing in again, when it is not adding one.
+// The dialog is shared because the flow is identical past the first step.
+let reauth = null;
 
 /* ------------------------------------------------------------------ render */
 
@@ -97,13 +101,13 @@ function paint() {
 
 	// Grouped by provider: the two measure usage in different terms, so reading
 	// them as one list invites comparing numbers that are not comparable.
-	const order = ['codex', 'claude'];
+	const order = ['codex', 'claude', 'copilot', 'cursor'];
 	const groups = order
 		.map((provider) => ({ provider, items: accounts.filter((a) => a.provider === provider) }))
 		.concat({ provider: 'other', items: accounts.filter((a) => !order.includes(a.provider)) })
 		.filter((g) => g.items.length > 0);
 
-	const names = { codex: 'Codex', claude: 'Claude', other: 'Other' };
+	const names = { codex: 'Codex', claude: 'Claude', copilot: 'Copilot', cursor: 'Cursor', other: 'Other' };
 
 	grid.innerHTML = groups
 		.map(
@@ -112,6 +116,7 @@ function paint() {
           <h2 class="group-head" role="button" tabindex="0" aria-expanded="${!collapsed.has(group.provider)}">
             <span class="group-caret">▼</span>
             ${escapeHtml(names[group.provider] ?? group.provider)}
+            ${ALPHA_PROVIDERS.has(group.provider) ? '<span class="alpha">alpha</span>' : ''}
             <span class="group-count">${group.items.length}</span>
           </h2>
           <div class="group-grid" ${collapsed.has(group.provider) ? 'hidden' : ''}>${group.items.map((a) => renderCard(a, state.availability)).join('')}</div>
@@ -143,6 +148,10 @@ function paint() {
 
 	for (const btn of grid.querySelectorAll('button.rename')) {
 		btn.addEventListener('click', () => openRename(btn.dataset.id, btn.dataset.label));
+	}
+
+	for (const btn of grid.querySelectorAll('button.reauth')) {
+		btn.addEventListener('click', () => beginReauth(btn.dataset.id, btn.dataset.label));
 	}
 
 	for (const btn of grid.querySelectorAll('button.instance')) {
@@ -232,17 +241,26 @@ async function refresh() {
 
 /* ------------------------------------------------------------- add account */
 
+const NEXT_LABEL = { code: 'Finish', again: 'Try again' };
+
 function showStep(name) {
 	for (const step of document.querySelectorAll('.step')) step.hidden = step.dataset.step !== name;
 	addError.hidden = true;
 	nextBtn.hidden = name === 'browser';
-	nextBtn.textContent = name === 'code' ? 'Finish' : 'Continue';
+	// Re-enabled here rather than by each caller: a step is shown because it is
+	// the one waiting on the user, and the button that carries it forward was
+	// disabled by whatever step came before. Missing this left "Finish" dead on
+	// the code box — the one step of Claude's sign-in that cannot be skipped.
+	nextBtn.disabled = false;
+	nextBtn.textContent = NEXT_LABEL[name] ?? 'Continue';
 }
 
 function paintProviders() {
 	const options = [
 		{ id: 'codex', name: 'Codex', missing: 'Codex is not installed on this machine' },
 		{ id: 'claude', name: 'Claude', missing: 'Claude Code is not installed on this machine' },
+		{ id: 'copilot', name: 'Copilot', missing: 'The GitHub CLI (gh) is not installed on this machine' },
+		{ id: 'cursor', name: 'Cursor', missing: 'Cursor is not installed on this machine' },
 	];
 
 	// Unavailable providers stay visible with the reason: a missing client is
@@ -251,7 +269,7 @@ function paintProviders() {
 		.map((o) => {
 			const available = state.availability?.[o.id];
 			return `<button type="button" class="provider" data-provider="${o.id}" ${available ? '' : 'disabled'}>
-          <span class="pname">${escapeHtml(o.name)}</span>
+          <span class="pname">${escapeHtml(o.name)}${ALPHA_PROVIDERS.has(o.id) ? '<span class="alpha">alpha</span>' : ''}</span>
           ${available ? '' : `<span class="pnote">${escapeHtml(o.missing)}</span>`}
         </button>`;
 		})
@@ -270,7 +288,9 @@ function paintProviders() {
 }
 
 function openAddDialog() {
+	reauth = null;
 	chosenProvider = null;
+	dialogTitle.textContent = 'Add an account';
 	labelInput.value = '';
 	codeInput.value = '';
 	paintProviders();
@@ -278,24 +298,35 @@ function openAddDialog() {
 	dialog.showModal();
 }
 
-function failAdd(message) {
+/**
+ * Reports a sign-in that did not land, on the step that can act on it.
+ *
+ * Adding can go back and correct the provider or the name; signing an existing
+ * account in again has neither, so it gets a step whose only offer is another
+ * attempt. The error is written after the step is shown, because showing one
+ * clears whatever the last attempt left behind.
+ */
+function failSignIn(message) {
+	showStep(reauth ? 'again' : 'choose');
 	addError.textContent = message;
 	addError.hidden = false;
-	showStep('choose');
-	nextBtn.disabled = false;
 }
 
-async function beginAdd() {
-	if (!chosenProvider) return failAdd('Pick a provider first.');
-	if (!labelInput.value.trim()) return failAdd('Give the account a name.');
-
-	nextBtn.disabled = true;
+/** The browser step, before the provider has handed over a URL to show. */
+function awaitBrowser(status) {
 	showStep('browser');
 	// Until the provider hands back a URL there is nothing to show, and an empty
 	// field reads as breakage. Say what is happening instead.
-	$('.step[data-step="browser"] .status').textContent = 'Starting sign-in…';
+	$('.step[data-step="browser"] .status').textContent = status;
 	authUrlBtn.textContent = '';
 	authUrlBtn.hidden = true;
+}
+
+async function beginAdd() {
+	if (!chosenProvider) return failSignIn('Pick a provider first.');
+	if (!labelInput.value.trim()) return failSignIn('Give the account a name.');
+
+	awaitBrowser('Starting sign-in…');
 
 	addInFlight = window.aidash
 		.addAccount(chosenProvider, labelInput.value.trim())
@@ -304,10 +335,46 @@ async function beginAdd() {
 			await refresh();
 			done('Account added');
 		})
-		.catch((err) => failAdd(String(err?.message ?? err).replace(/^Error invoking remote method '[^']+':\s*/, '')))
+		.catch((err) => failSignIn(reason(err)))
 		.finally(() => {
 			addInFlight = null;
-			nextBtn.disabled = false;
+		});
+}
+
+/**
+ * Signs an account that already exists in again.
+ *
+ * Opens straight at the browser step: the provider and the name are settled,
+ * and asking for them again would only offer to change things this is not
+ * changing. Everything past that point — the URL, the code box, cancelling — is
+ * the add flow untouched.
+ */
+async function beginReauth(id, label) {
+	reauth = { id, label };
+	dialogTitle.textContent = `Sign in again as ${label}`;
+	codeInput.value = '';
+	awaitBrowser('Starting sign-in…');
+	if (!dialog.open) dialog.showModal();
+
+	addInFlight = window.aidash
+		.reauthorizeAccount(id)
+		.then(async ({ state: next, account, switched }) => {
+			dialog.close();
+			reauth = null;
+			// Painted from what the sign-in returned before the usage call goes out,
+			// so the error the card was showing disappears with the login that
+			// caused it rather than a network round trip later.
+			state = next;
+			paint();
+			await refresh();
+			// A different person behind the same card is not an error, but it is not
+			// what the button said either — so it is named rather than left to be
+			// spotted in the identity line later.
+			done(switched ? `Now signed in as ${account.email ?? 'another account'} — the name and its sessions stayed` : 'Signed in again');
+		})
+		.catch((err) => failSignIn(reason(err)))
+		.finally(() => {
+			addInFlight = null;
 		});
 }
 
@@ -319,6 +386,17 @@ window.aidash.onLoginProgress((progress) => {
 		authUrlBtn.textContent = progress.url;
 		authUrlBtn.onclick = () => window.aidash.openUrl(progress.url);
 	}
+	if (progress.stage === 'device') {
+		showStep('device');
+		$('#device-code').textContent = progress.code;
+		const link = $('#device-url');
+		link.textContent = progress.url;
+		link.onclick = () => window.aidash.openUrl(progress.url);
+	}
+	if (progress.stage === 'external') {
+		showStep('external');
+		$('#external-note').textContent = progress.note;
+	}
 	if (progress.stage === 'code') {
 		showStep('code');
 		codeInput.focus();
@@ -328,18 +406,18 @@ window.aidash.onLoginProgress((progress) => {
 nextBtn.addEventListener('click', () => {
 	const current = [...document.querySelectorAll('.step')].find((s) => !s.hidden)?.dataset.step;
 	if (current === 'choose') return beginAdd();
+	if (current === 'again' && reauth) return beginReauth(reauth.id, reauth.label);
 	if (current === 'code') {
 		const code = codeInput.value.trim();
 		if (!code) return;
-		nextBtn.disabled = true;
-		showStep('browser');
-		$('.step[data-step="browser"] .status').textContent = 'Finishing sign-in…';
+		awaitBrowser('Finishing sign-in…');
 		window.aidash.supplyCode(code);
 	}
 });
 
 cancelBtn.addEventListener('click', async () => {
-	await window.aidash.cancelAdd();
+	await window.aidash.cancelSignIn();
+	reauth = null;
 	dialog.close();
 });
 

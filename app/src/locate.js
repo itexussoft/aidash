@@ -47,6 +47,21 @@ export function wellKnownPaths(command) {
 		return [join(home, '.local', 'bin', 'claude')];
 	}
 
+	if (command === 'gh') {
+		if (isWindows) return [join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'GitHub CLI', 'gh.exe')];
+		return ['/opt/homebrew/bin/gh', '/usr/local/bin/gh'];
+	}
+
+	// The launcher inside the app bundle, for a Cursor whose "install command in
+	// PATH" step was never run — which is most of them.
+	if (command === 'cursor') {
+		if (process.platform === 'darwin') return ['/Applications/Cursor.app/Contents/Resources/app/bin/cursor'];
+		if (isWindows) {
+			return [join(process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local'), 'Programs', 'cursor', 'resources', 'app', 'bin', 'cursor.cmd')];
+		}
+		return [join(home, '.local', 'bin', 'cursor'), '/usr/bin/cursor'];
+	}
+
 	return [];
 }
 
