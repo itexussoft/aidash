@@ -31,6 +31,8 @@
  */
 
 import { readdir, stat, rename, access, open, readFile, writeFile, mkdir, copyFile, rm } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -308,6 +310,61 @@ async function describeTranscript(file) {
 }
 
 /**
+ * The last resort for an entry's model: an alias the CLI resolves itself, so it
+ * does not go stale the way a pinned model id would.
+ */
+const FALLBACK_MODEL = 'opus';
+
+/** A model id a real turn ran on — not our own `imported`, not `<synthetic>`. */
+const realModel = (model) => typeof model === 'string' && model && model !== 'imported' && !model.startsWith('<');
+
+/**
+ * The first model a transcript records, read as far into it as it takes.
+ *
+ * Not from the head `describeTranscript` reads: the first assistant turn lands
+ * after the opening prompt and its attachments, which on the machine this was
+ * found on put it 170–205 KB in — well past the 64 KB slice.
+ */
+async function findModel(file) {
+	const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity });
+	try {
+		for await (const line of lines) {
+			if (!line.includes('"model"')) continue;
+			try {
+				const model = JSON.parse(line).message?.model;
+				if (realModel(model)) return model;
+			} catch {
+				/* a half-written last line */
+			}
+		}
+	} finally {
+		lines.close();
+	}
+	return null;
+}
+
+/** The model of the account's most recently active session, if any has one. */
+async function recentModel(accountPath) {
+	const files = (await readdir(accountPath).catch(() => [])).filter((f) => f.endsWith('.json'));
+	const entries = (await Promise.all(files.map((f) => readEntry(join(accountPath, f))))).filter((e) => realModel(e?.model));
+	entries.sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
+	return entries[0]?.model ?? null;
+}
+
+/**
+ * What to put in a new entry's `model`. Never null.
+ *
+ * The desktop app calls a string method on this field for every session it
+ * lists. A null there throws, and the app drops the session from its sidebar
+ * without a word — the entry is on disk, the transcript is intact, and the
+ * session is simply not shown. So the transcript's own model comes first, then
+ * whatever the account last used, then an alias.
+ */
+async function modelFor({ transcriptFile = null, toAccountPath }) {
+	return (transcriptFile && (await findModel(transcriptFile))) || (await recentModel(toAccountPath)) || FALLBACK_MODEL;
+}
+
+/**
  * Transcripts with no index entry anywhere.
  *
  * These are resumable from the terminal and invisible to the desktop app,
@@ -360,7 +417,7 @@ export async function adoptSession({ transcriptFile, toAccountPath }) {
 		createdAt: described.createdAt,
 		lastActivityAt: described.lastAt,
 		lastFocusedAt: described.lastAt,
-		model: described.model ?? null,
+		model: realModel(described.model) ? described.model : await modelFor({ transcriptFile, toAccountPath }),
 		isArchived: false,
 		title: described.title ?? basename(described.cwd),
 		titleSource: described.title ? 'auto' : 'derived',
@@ -486,6 +543,8 @@ export async function importConversation(toAccountPath, { title, cwd, messages, 
 
 	const entryId = `local_${randomUUID()}`;
 	const now = Date.now();
+	// The transcript's turns say `imported`, which is no model at all.
+	const model = await modelFor({ toAccountPath });
 	await writeFile(
 		join(toAccountPath, `${entryId}.json`),
 		JSON.stringify(
@@ -497,7 +556,7 @@ export async function importConversation(toAccountPath, { title, cwd, messages, 
 				createdAt: now,
 				lastActivityAt: now,
 				lastFocusedAt: now,
-				model: null,
+				model,
 				isArchived: false,
 				title,
 				titleSource: 'user',

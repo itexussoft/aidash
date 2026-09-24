@@ -901,6 +901,33 @@ console.log('\nsession index');
 		/no longer there/.test(await rejects(() => adoptSession({ transcriptFile: join(index, 'nope.jsonl'), toAccountPath: B }))),
 	);
 
+	// The desktop app throws on a null `model` and silently leaves the session out
+	// of its sidebar. The first assistant turn sits past the opening prompt and its
+	// attachments — here, as on real transcripts, beyond the 64 KB head.
+	const { readFile: readAdopted } = await import('node:fs/promises');
+	const adoptedEntry = async (cliSessionId) => {
+		for (const file of await readdir(B)) {
+			const e = JSON.parse(await readAdopted(join(B, file), 'utf8'));
+			if (e.cliSessionId === cliSessionId) return e;
+		}
+		return null;
+	};
+	const orphanDir = join(transcripts, encodeCwd('/Users/test/cli-only'));
+	await mkdir(orphanDir, { recursive: true });
+	const opening = [
+		JSON.stringify({ type: 'user', cwd: '/Users/test/cli-only', timestamp: '2026-09-23T06:42:00Z', message: { role: 'user', content: 'go' } }),
+		JSON.stringify({ type: 'attachment', cwd: '/Users/test/cli-only', content: 'x'.repeat(100 * 1024) }),
+	].join('\n');
+	const turn = (model) => JSON.stringify({ type: 'assistant', cwd: '/Users/test/cli-only', message: { role: 'assistant', model, content: [] } });
+
+	await writeFile(join(orphanDir, 'cli-deep.jsonl'), [opening, turn('<synthetic>'), turn('claude-opus-5-5')].join('\n') + '\n');
+	await adoptSession({ transcriptFile: join(orphanDir, 'cli-deep.jsonl'), toAccountPath: B });
+	check('an adopted entry takes the model from deep in the transcript', (await adoptedEntry('cli-deep'))?.model === 'claude-opus-5-5');
+
+	await writeFile(join(orphanDir, 'cli-nomodel.jsonl'), opening + '\n');
+	await adoptSession({ transcriptFile: join(orphanDir, 'cli-nomodel.jsonl'), toAccountPath: B });
+	check("with no model in the transcript, it takes the account's latest", (await adoptedEntry('cli-nomodel'))?.model === 'claude-opus-5-5');
+
 	// The escape hatch for a stuck Remote Control link: a local edit of the same
 	// field the desktop app itself reads, done account-wide. Fresh filenames,
 	// deliberately distinct from the ones already written into A above.
@@ -1030,6 +1057,8 @@ console.log('\ncross-tool copy');
 	check('the Claude transcript is written', transcript.includes('ship'));
 	check('its title is recorded', JSON.parse(transcript.split('\n')[0]).aiTitle === 'Codex imported: Ship it');
 	check('an index entry makes it listable', (await readdir(account)).length === 1);
+	const importedEntry = JSON.parse(await readFile(join(account, (await readdir(account))[0]), 'utf8'));
+	check('the entry never carries a null model', typeof importedEntry.model === 'string' && importedEntry.model !== 'imported');
 	check('Claude can read back what we wrote', (await readConversation(written.transcript, 'claude')).messages.length === 2);
 
 	check('the preamble admits what is missing', /Tool calls[\s\S]*not carried across/.test(preamble('claude', 'X')));

@@ -8,6 +8,9 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 ## Unreleased
 
+- Stops a session dragged in from Only in the CLI, or copied from Codex, from
+  vanishing in the desktop app: its entry now always names a model
+
 ## 0.3.0
 
 - Watches GitHub Copilot accounts: chat, completions and premium requests
