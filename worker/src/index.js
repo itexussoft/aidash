@@ -22,7 +22,7 @@ const asset = (version, file) => `${REPO}/releases/download/v${version}/${file}`
 
 // The one line `npm run release` rewrites. Everything below derives from it, so
 // a bump cannot leave a download link pointing at the previous version's files.
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 
 // Bumped alongside VERSION by `npm run release`, copied from CHANGELOG.md's
 // "Unreleased" section — the app's own words for what this version brought,
