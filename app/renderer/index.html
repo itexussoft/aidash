@@ -115,6 +115,11 @@
 				<strong>Merge and remove</strong> on a folder above folds its sessions back into the main profile and retires it.
 			</p>
 			<p class="lede">
+				<strong>Third-party inference</strong> — Claude Desktop's developer mode — works the same way: it runs over a profile
+				of its own, <code>Claude-3p</code>, with its own index, and is picked up here without being added. A session moved
+				into or out of it switches to the model that side last ran on, since the provider behind a model name changes too.
+			</p>
+			<p class="lede">
 				The <strong>terminal CLI</strong> ignores this index entirely: it lists whatever sits in its own config directory, for
 				whoever is signed in. Sessions started there can therefore be missing from the desktop app altogether — those appear
 				under <strong>Only in the CLI</strong>, and dragging one onto an account makes the desktop app list it too.

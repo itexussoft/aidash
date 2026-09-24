@@ -928,6 +928,28 @@ console.log('\nsession index');
 	await adoptSession({ transcriptFile: join(orphanDir, 'cli-nomodel.jsonl'), toAccountPath: B });
 	check("with no model in the transcript, it takes the account's latest", (await adoptedEntry('cli-nomodel'))?.model === 'claude-opus-5-5');
 
+	// Crossing into or out of third-party inference: the model id has to be one
+	// the new side's provider serves, or resuming asks it for a model it lacks.
+	const T = join(index, 'account-t', 'org-t');
+	await mkdir(T, { recursive: true });
+	const modelIn = async (dir, file) => JSON.parse(await readAdopted(join(dir, file), 'utf8')).model;
+	const lastRun = (over) => entry({ cwd: '/Users/test/cli-only', model: 'gpt-5.6-sol', ...over });
+
+	await writeFile(join(A, 'local_home.json'), JSON.stringify(lastRun({ sessionId: 'local_home', cliSessionId: 'cli-deep' })));
+	const home = await moveSession({ fromFile: join(A, 'local_home.json'), toAccountPath: T, cliSessionId: 'cli-deep', retarget: true, transcriptsRoot: transcripts });
+	check('into an empty side, it takes the model its transcript ran on', (await modelIn(T, 'local_home.json')) === 'claude-opus-5-5');
+	check('and says what it switched to', home.model === 'claude-opus-5-5');
+
+	// The transcript and the destination disagree here, so the order is visible.
+	await writeFile(join(orphanDir, 'cli-gpt.jsonl'), [opening, turn('gpt-5.6-sol')].join('\n') + '\n');
+	await writeFile(join(A, 'local_join.json'), JSON.stringify(lastRun({ sessionId: 'local_join', cliSessionId: 'cli-gpt', model: 'claude-opus-5', lastActivityAt: 1 })));
+	await moveSession({ fromFile: join(A, 'local_join.json'), toAccountPath: T, cliSessionId: 'cli-gpt', retarget: true, transcriptsRoot: transcripts });
+	check('into a side with history, it takes what that side last ran on', (await modelIn(T, 'local_join.json')) === 'claude-opus-5-5');
+
+	await writeFile(join(A, 'local_plain.json'), JSON.stringify(lastRun({ sessionId: 'local_plain', cliSessionId: 'cli-plain' })));
+	const plain = await moveSession({ fromFile: join(A, 'local_plain.json'), toAccountPath: T, cliSessionId: 'cli-plain', transcriptsRoot: transcripts });
+	check('a move that crosses nothing keeps its model', (await modelIn(T, 'local_plain.json')) === 'gpt-5.6-sol' && plain.model === null);
+
 	// What an earlier version left behind: `model: null`, hidden by the desktop
 	// app until something writes a model in.
 	const { repairIndex } = await import('./src/sessions.js');
@@ -1126,10 +1148,10 @@ check('a .cmd is only special on Windows', spawnable('/opt/claude.cmd', 'darwin'
 
 console.log('\nseparate instances');
 {
-	const { listIndexAccounts, mergeIndexRoot, MAIN_ROOT } = await import('./src/sessions.js');
+	const { listIndexAccounts, mergeIndexRoot, MAIN_ROOT, THIRD_PARTY_ROOT } = await import('./src/sessions.js');
 	const { instanceDirIn, indexIn, findDesktop, readIndexRoot } = await import('./src/instances.js');
 	const { AccountStore } = await import('./src/accounts.js');
-	const { mkdtemp, mkdir, writeFile, readdir } = await import('node:fs/promises');
+	const { mkdtemp, mkdir, writeFile, readdir, rm } = await import('node:fs/promises');
 	const { tmpdir } = await import('node:os');
 	const { join } = await import('node:path');
 
@@ -1212,9 +1234,28 @@ console.log('\nseparate instances');
 	check('the index folder resolves to itself', (await readIndexRoot(inst))?.path === inst);
 	check('anything else is refused rather than added as a root that reads nothing', (await readIndexRoot(root)) === null);
 
-	const store = new AccountStore(await mkdtemp(join(tmpdir(), 'aidash-roots-')));
+	// Pointed at a temporary folder: the real one is on whichever machine runs
+	// this, and a test that passed or failed by whether that mode was ever used
+	// would be testing the machine.
+	const thirdPartyRoot = { ...THIRD_PARTY_ROOT, path: join(root, 'Claude-3p', 'claude-code-sessions') };
+	const store = new AccountStore(await mkdtemp(join(tmpdir(), 'aidash-roots-')), { thirdPartyRoot });
 	await store.load();
 	check('the main profile is a root before anything is added', (await store.indexRoots()).length === 1);
+	check('the real third-party folder is the default', new AccountStore(root).thirdPartyRoot.path.endsWith(join('Claude-3p', 'claude-code-sessions')));
+
+	await mkdir(join(thirdPartyRoot.path, 'account-t', '00000000-0000-4000-8000-000000000001'), { recursive: true });
+	const withThirdParty = await store.indexRoots();
+	check('the third-party index is found once it exists', withThirdParty[1]?.kind === 'third-party');
+	check('without being added by hand', store.state.sessionRoots.length === 0);
+	const thirdPartyAccounts = await listIndexAccounts(withThirdParty);
+	const thirdPartyColumn = thirdPartyAccounts.find((a) => a.rootKind === 'third-party');
+	check('its column is its own', thirdPartyColumn?.id === 'third-party:account-t/00000000-0000-4000-8000-000000000001');
+	check('and drawn as a second listing, not the main one', thirdPartyColumn?.secondary === true);
+	check(
+		'pointing at it by hand as well does not make a second column',
+		/already listed/.test(await rejects(() => store.addSessionRoot({ path: thirdPartyRoot.path, profile: join(root, 'Claude-3p') }))),
+	);
+	await rm(join(root, 'Claude-3p'), { recursive: true, force: true });
 	const id = await store.addSessionRoot({ path: inst, profile, label: 'Borrowed' });
 	check('a hand-picked folder becomes a root', (await store.indexRoots()).some((r) => r.id === id && r.kind === 'manual'));
 	check('the same folder twice is refused', /already listed/.test(await rejects(() => store.addSessionRoot({ path: inst, profile }))));

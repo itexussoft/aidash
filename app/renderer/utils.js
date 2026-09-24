@@ -8,6 +8,7 @@
  * What a drag does depends on where it lands:
  *
  *   Claude account → Claude account   moves the index entry
+ *   into or out of third-party        moves it and switches its model
  *   Only in the CLI → Claude account  writes the index entry it lacked
  *   across tools                      copies the dialogue, after a warning
  *
@@ -209,14 +210,18 @@ function columns() {
 	}
 
 	for (const account of view.accounts) {
+		// Filed under a placeholder organisation that no sign-in will ever name, so
+		// it is named for the mode, not left as a bare id asking to be added.
+		const thirdParty = account.rootKind === 'third-party';
 		cols.push({
 			id: account.id,
 			tool: 'claude',
 			path: account.path,
 			email: account.email,
 			expired: account.expired,
-			name: accountName(account),
-			under: account.orgName ?? account.orgUuid,
+			thirdParty,
+			name: thirdParty ? 'Third-party inference' : accountName(account),
+			under: thirdParty ? 'Claude Desktop developer mode' : (account.orgName ?? account.orgUuid),
 			// A listing that belongs to a second copy of the desktop app rather than
 			// the one everybody has. It behaves identically — the difference is worth
 			// showing, not enforcing.
@@ -319,7 +324,7 @@ function projectRow(project) {
 			const sessions = project.byAccount[column.id] ?? [];
 			// An account nobody is signed in as anywhere the app can read shows as
 			// a bare id; adding it on the Usage tab is what gives it a name.
-			const note = column.orphan
+			const note = column.orphan || column.thirdParty
 				? ''
 				: column.tool === CODEX
 					? ''
@@ -333,20 +338,27 @@ function projectRow(project) {
 			// is not the obvious one, and said on every column rather than only on
 			// duplicates: the same account can appear twice, and a badge that came
 			// and went would leave you working out which of the two is which.
-			const where = column.secondary
-				? `<span class="col-tag" title="${escapeHtml(
-						column.rootKind === 'instance'
-							? 'A separate copy of Claude Desktop for this account, with its own list of sessions. Transcripts and settings are shared with the main one.'
-							: 'A Claude Desktop profile folder added by hand. Its sessions are listed here the same as any other.',
-					)}">${escapeHtml(column.rootKind === 'instance' ? `instance · ${column.rootLabel ?? ''}`.trim() : 'added folder')}</span>`
-				: '';
+			const tag =
+				column.rootKind === 'instance'
+					? {
+							text: `instance · ${column.rootLabel ?? ''}`.trim(),
+							title: 'A separate copy of Claude Desktop for this account, with its own list of sessions. Transcripts and settings are shared with the main one.',
+						}
+					: column.rootKind === 'third-party'
+						? {
+								text: 'third-party',
+								title:
+									'Claude Desktop in developer mode with third-party inference keeps its own list of sessions. Transcripts are shared with the main profile. A session moved across switches to the model this side last ran on.',
+							}
+						: { text: 'added folder', title: 'A Claude Desktop profile folder added by hand. Its sessions are listed here the same as any other.' };
+			const where = column.secondary ? `<span class="col-tag" title="${escapeHtml(tag.title)}">${escapeHtml(tag.text)}</span>` : '';
 
 			return `
         <div class="col ${column.orphan ? 'orphan' : ''} ${column.tool === CODEX ? 'codex' : ''} ${column.secondary ? 'secondary' : ''}"
              data-account="${escapeHtml(column.id)}" data-tool="${escapeHtml(column.tool)}" data-cwd="${escapeHtml(project.cwd)}">
           <div class="col-head">
             <span class="col-who">
-              <b class="${column.orphan || (column.tool === 'claude' && !column.email) ? 'unknown' : ''}">${escapeHtml(column.name)}</b>
+              <b class="${column.orphan || (column.tool === 'claude' && !column.email && !column.thirdParty) ? 'unknown' : ''}">${escapeHtml(column.name)}</b>
               ${where}
               <span class="col-path">${escapeHtml(column.under)}</span>
               ${note}
@@ -446,13 +458,26 @@ function rootChips() {
 	for (const root of (view.indexRoots ?? []).filter((r) => r.kind !== 'main')) {
 		const count = sessionsIn(root.id);
 		const name = root.label ?? root.id;
-		const kind = root.kind === 'instance' ? 'Instance' : 'Added folder';
+		const thirdParty = root.kind === 'third-party';
+		const kind = root.kind === 'instance' ? 'Instance' : thirdParty ? 'Third-party' : 'Added folder';
+		// No merge for the third-party list: it would empty the list that mode
+		// reads, and the folder is the desktop app's to keep, not ours to retire.
+		const merge = thirdParty
+			? ''
+			: `<button class="rc-merge" data-root="${escapeHtml(root.id)}"
+            title="${escapeHtml(
+							root.kind === 'instance'
+								? 'Moves every session here into the main profile under the same account, then deletes this separate instance. Transcripts are untouched. Quit that copy of Claude Desktop first.'
+								: 'Moves every session here into the main profile under the same account, then forgets this folder. Nothing on disk is deleted.',
+						)}">${icon('merge')}<span>merge and remove</span></button>`;
 		chips.push(`
       <span class="root-chip secondary ${hiddenColumns.has(root.id) ? 'is-hidden' : ''}" data-root="${escapeHtml(root.id)}"
             title="${escapeHtml(
 							root.kind === 'instance'
 								? 'A second copy of Claude Desktop, signed in as this account, with its own session folder.'
-								: 'A Claude Desktop session folder added by hand, kept on disk wherever it already was.',
+								: thirdParty
+									? 'The session folder Claude Desktop keeps in developer mode with third-party inference. Found on its own — nothing to add.'
+									: 'A Claude Desktop session folder added by hand, kept on disk wherever it already was.',
 						)}">
         <span class="rc-icon">${icon('folder')}</span>
         <span class="rc-body">
@@ -462,12 +487,7 @@ function rootChips() {
         </span>
         <span class="rc-actions">
           ${hideToggle(root.id, name)}
-          <button class="rc-merge" data-root="${escapeHtml(root.id)}"
-            title="${escapeHtml(
-							root.kind === 'instance'
-								? 'Moves every session here into the main profile under the same account, then deletes this separate instance. Transcripts are untouched. Quit that copy of Claude Desktop first.'
-								: 'Moves every session here into the main profile under the same account, then forgets this folder. Nothing on disk is deleted.',
-						)}">${icon('merge')}<span>merge and remove</span></button>
+          ${merge}
         </span>
       </span>`);
 	}
@@ -778,10 +798,15 @@ function wireCards() {
 						fromAccount: source.fromColumn,
 						toAccount: target.id,
 					});
+					// Set when the move crossed into or out of third-party inference,
+					// where the old model id would mean nothing to the new provider.
+					const retargeted = next?.retargeted;
 					done(
 						source.bridges
 							? 'Moved — the Remote Control link stays with the old account'
-							: 'Moved — restart Claude Code to see it there',
+							: retargeted
+								? `Moved — restart Claude Code; it now resumes on ${retargeted}`
+								: 'Moved — restart Claude Code to see it there',
 					);
 				}
 

@@ -60,6 +60,27 @@ export const INDEX_ROOT = join(homedir(), 'Library', 'Application Support', 'Cla
  */
 export const MAIN_ROOT = { id: 'main', path: INDEX_ROOT, kind: 'main', label: 'Claude Desktop' };
 
+/**
+ * The index Claude Desktop keeps while in developer mode with third-party
+ * inference.
+ *
+ * That mode runs the same app over a user data folder of its own, `Claude-3p`,
+ * so its sessions are listed by an index nothing else reads — while their
+ * transcripts land in the same `~/.claude/projects` as everyone's. Unread, its
+ * sessions showed here as belonging to nobody. Found by name rather than added
+ * by hand, because the app chooses the folder and nobody picks it.
+ *
+ * Its account folder sits under a placeholder organisation, not a real one, so
+ * no signed-in config directory will ever name it; the column is named for the
+ * mode instead.
+ */
+export const THIRD_PARTY_ROOT = {
+	id: 'third-party',
+	path: join(homedir(), 'Library', 'Application Support', 'Claude-3p', 'claude-code-sessions'),
+	kind: 'third-party',
+	label: 'Claude-3p',
+};
+
 /** Accepts a bare path, one root, or several, and always yields several. */
 const asRoots = (roots) =>
 	(Array.isArray(roots) ? roots : [roots]).map((root) => (typeof root === 'string' ? { ...MAIN_ROOT, path: root } : root));
@@ -755,7 +776,7 @@ export async function scanEverything(configDirs = [DEFAULT_CONFIG_DIR], codexHom
  * The transcript is shared and stays exactly where it is; only the record of
  * which account may see it changes.
  */
-export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
+export async function moveSession({ fromFile, toAccountPath, cliSessionId, retarget = false, transcriptsRoot = TRANSCRIPTS }) {
 	if (!(await exists(fromFile))) throw new Error('this session is no longer where it was — rescan and try again');
 	if (!(await exists(toAccountPath))) throw new Error('the destination account has no session store yet');
 
@@ -775,6 +796,11 @@ export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
 		if (entry?.cliSessionId === cliSessionId) throw new Error('the destination account already lists this session');
 	}
 
+	// Read before the move, while the destination holds only its own sessions —
+	// afterwards the newest entry there would be this one, naming the old model.
+	const across = retarget ? await modelAcross({ source, toAccountPath, transcriptsRoot }) : null;
+	const model = across && across !== source?.model ? across : null;
+
 	await mkdir(toAccountPath, { recursive: true });
 	try {
 		await rename(fromFile, target);
@@ -785,7 +811,31 @@ export async function moveSession({ fromFile, toAccountPath, cliSessionId }) {
 		await rm(fromFile, { force: true });
 	}
 
-	return { moved: cliSessionId, to: toAccountPath, bridges };
+	if (model) {
+		const { file: _, ...rest } = await readEntry(target);
+		await writeFile(target, JSON.stringify({ ...rest, model }, null, 2));
+	}
+
+	return { moved: cliSessionId, to: toAccountPath, bridges, model };
+}
+
+/**
+ * The model a session should name after crossing between Claude Desktop's own
+ * inference and its third-party mode.
+ *
+ * The desktop app resumes a session with the model its entry names, and across
+ * that line the provider behind the name changes: a Claude model id means
+ * nothing to a third-party gateway, and the reverse. What the destination last
+ * ran on is the best evidence of what its provider serves; failing that, what
+ * the conversation itself ran on — right for a session going back to where it
+ * started, which is the common case.
+ */
+async function modelAcross({ source, toAccountPath, transcriptsRoot }) {
+	const recent = await recentModel(toAccountPath);
+	if (recent) return recent;
+	if (!source?.cwd) return null;
+	const { transcript } = await transcriptFacts(source.cliSessionId, source.cwd, transcriptsRoot);
+	return transcript ? await findModel(transcript) : null;
 }
 
 /**

@@ -25,7 +25,7 @@ import { codex } from './providers/codex.js';
 import { claude } from './providers/claude.js';
 import { copilot } from './providers/copilot.js';
 import { cursor } from './providers/cursor.js';
-import { DEFAULT_ROOT, MAIN_ROOT } from './sessions.js';
+import { DEFAULT_ROOT, MAIN_ROOT, THIRD_PARTY_ROOT } from './sessions.js';
 import { findDesktop, indexIn, instanceDirIn } from './instances.js';
 
 const exists = (p) =>
@@ -47,8 +47,11 @@ export const PROVIDERS = { codex, claude, copilot, cursor };
 export const DEFAULT_SETTINGS = { tray: true, notifications: true, refreshEveryMinutes: 60 };
 
 export class AccountStore {
-	constructor(userDataDir) {
+	constructor(userDataDir, { thirdPartyRoot = THIRD_PARTY_ROOT } = {}) {
 		this.file = join(userDataDir, 'accounts.json');
+		// A fixed place in the home folder; a parameter only so tests can point it
+		// somewhere that is not this machine's.
+		this.thirdPartyRoot = thirdPartyRoot;
 		this.accountsDir = join(userDataDir, 'accounts');
 		// Beside the credential directories rather than inside them: this holds a
 		// whole second copy of Claude Desktop's user data, which has no business
@@ -167,13 +170,18 @@ export class AccountStore {
 	/**
 	 * Every session index worth reading, main profile first.
 	 *
-	 * Three kinds, and the distinction is not cosmetic: the main one is where
-	 * things are folded back to, an instance belongs to an account and dies with
-	 * it, and a folder pointed at by hand is only ever remembered — forgetting it
-	 * must leave whatever it names untouched.
+	 * Four kinds, and the distinction is not cosmetic: the main one is where
+	 * things are folded back to, the third-party one belongs to the desktop app's
+	 * other mode and is neither merged nor forgotten, an instance belongs to an
+	 * account and dies with it, and a folder pointed at by hand is only ever
+	 * remembered — forgetting it must leave whatever it names untouched.
 	 */
 	async indexRoots() {
 		const roots = [MAIN_ROOT];
+
+		// Listed only once that mode has been used; before then there is nothing
+		// to read and a column for it would only be noise.
+		if (await exists(this.thirdPartyRoot.path)) roots.push(this.thirdPartyRoot);
 
 		for (const account of this.state.accounts) {
 			if (account.provider !== 'claude') continue;

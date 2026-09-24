@@ -23,6 +23,7 @@ import {
 	clearAccountBridges,
 	repairIndex,
 	importConversation as importIntoClaude,
+	THIRD_PARTY_ROOT,
 	CODEX,
 } from './src/sessions.js';
 import { openInstance, readIndexRoot } from './src/instances.js';
@@ -432,6 +433,8 @@ ipcMain.handle('instances:merge', async (_event, rootId) => {
 	const root = (await store.indexRoots()).find((r) => r.id === rootId);
 	if (!root) throw new Error('no such folder');
 	if (root.kind === 'main') throw new Error('this is the main profile — there is nothing to merge it into');
+	// Merging would empty the list that mode reads, and retiring it is not ours.
+	if (root.kind === 'third-party') throw new Error('this is the third-party mode’s own list — move sessions one at a time instead');
 
 	const entries = await countEntries(root);
 	const owned = root.kind === 'instance';
@@ -674,8 +677,13 @@ ipcMain.handle('sessions:clearRemoteLinks', async (_event, accountId) => {
 	return { cleared, view: await scan() };
 });
 
+// Decided here from the column ids, not taken from the page: which side of the
+// line a column is on is a fact about where its index lives.
+const onThirdParty = (columnId) => Boolean(columnId?.startsWith(`${THIRD_PARTY_ROOT.id}:`));
+
 ipcMain.handle('sessions:move', async (_event, request) => {
-	const { bridges } = await moveSession(request);
+	const retarget = onThirdParty(request.fromAccount) !== onThirdParty(request.toAccount);
+	const { bridges, model } = await moveSession({ ...request, retarget });
 
 	// Written after the move rather than before: a move that threw would
 	// otherwise leave a note about something that never happened.
@@ -685,7 +693,7 @@ ipcMain.handle('sessions:move', async (_event, request) => {
 	// Back where its links were minted: the note has served its purpose.
 	if (request.toAccount) await journal.settle(request.cliSessionId, request.toAccount);
 
-	return scan();
+	return { ...(await scan()), retargeted: model };
 });
 
 // Giving an account a transcript nothing had claimed: the desktop app lists
