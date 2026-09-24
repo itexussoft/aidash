@@ -928,6 +928,36 @@ console.log('\nsession index');
 	await adoptSession({ transcriptFile: join(orphanDir, 'cli-nomodel.jsonl'), toAccountPath: B });
 	check("with no model in the transcript, it takes the account's latest", (await adoptedEntry('cli-nomodel'))?.model === 'claude-opus-5-5');
 
+	// What an earlier version left behind: `model: null`, hidden by the desktop
+	// app until something writes a model in.
+	const { repairIndex } = await import('./src/sessions.js');
+	const healIndex = await mkdtemp(join(tmpdir(), 'aidash-heal-'));
+	const H = join(healIndex, 'account-h', 'org-h');
+	await mkdir(H, { recursive: true });
+	const healed = entry({ sessionId: 'local_broken', cliSessionId: 'cli-deep', cwd: '/Users/test/cli-only', title: 'Broken', model: null, lastActivityAt: 1786000000000 });
+	await writeFile(join(H, 'local_broken.json'), JSON.stringify(healed));
+	await writeFile(join(H, 'local_fine.json'), JSON.stringify(entry({ sessionId: 'local_fine', cliSessionId: 'cli-fine' })));
+	const { model: _, ...keyless } = entry({ sessionId: 'local_keyless', cliSessionId: 'cli-keyless' });
+	const keylessText = JSON.stringify(keyless);
+	await writeFile(join(H, 'local_keyless.json'), keylessText);
+	const fineText = await readAdopted(join(H, 'local_fine.json'), 'utf8');
+
+	const repairs = await repairIndex(healIndex, transcripts);
+	const fixed = JSON.parse(await readAdopted(join(H, 'local_broken.json'), 'utf8'));
+	check('a null model is repaired from its transcript', fixed.model === 'claude-opus-5-5');
+	check('the rest of a repaired entry is kept', fixed.title === 'Broken' && fixed.sessionId === 'local_broken' && fixed.isArchived === false);
+	check('the repair is reported', repairs.length === 1 && repairs[0].title === 'Broken');
+	check('an entry with a model is not rewritten', (await readAdopted(join(H, 'local_fine.json'), 'utf8')) === fineText);
+	check('an entry with no model key is left alone', (await readAdopted(join(H, 'local_keyless.json'), 'utf8')) === keylessText);
+	check('a second pass finds nothing left to repair', (await repairIndex(healIndex, transcripts)).length === 0);
+
+	await writeFile(join(H, 'local_lost.json'), JSON.stringify(entry({ sessionId: 'local_lost', cliSessionId: 'cli-gone', model: null })));
+	await repairIndex(healIndex, transcripts);
+	check(
+		"with its transcript gone, it takes the account's latest model",
+		JSON.parse(await readAdopted(join(H, 'local_lost.json'), 'utf8')).model === 'claude-opus-5-5',
+	);
+
 	// The escape hatch for a stuck Remote Control link: a local edit of the same
 	// field the desktop app itself reads, done account-wide. Fresh filenames,
 	// deliberately distinct from the ones already written into A above.

@@ -21,6 +21,7 @@ import {
 	mergeIndexRoot,
 	listIndexAccounts,
 	clearAccountBridges,
+	repairIndex,
 	importConversation as importIntoClaude,
 	CODEX,
 } from './src/sessions.js';
@@ -375,7 +376,16 @@ function withBridgeState(view) {
 	return view;
 }
 
-const scan = async () => withBridgeState(await scanEverything(configDirs(), DEFAULT_CODEX_HOME, await store.indexRoots()));
+/**
+ * Repairs what an earlier version broke, then reads. In that order, so the view
+ * already shows the repaired entries; `repaired` says what changed, because the
+ * desktop app only sees it after a restart and somebody has to say so.
+ */
+const scan = async () => {
+	const roots = await store.indexRoots();
+	const repaired = await repairIndex(roots);
+	return { ...withBridgeState(await scanEverything(configDirs(), DEFAULT_CODEX_HOME, roots)), repaired };
+};
 
 /* ----------------------------------------------------- separate instances */
 

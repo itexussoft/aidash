@@ -481,6 +481,39 @@ export async function clearAccountBridges(accountPath) {
 }
 
 /**
+ * Gives a model to every entry that has `model: null`, in every index.
+ *
+ * Earlier versions of this app wrote exactly that when adopting a CLI-only
+ * transcript or copying a conversation in from Codex, and the desktop app drops
+ * such an entry from its sidebar — see `modelFor`. Run on every scan rather
+ * than once, because the desktop app keeps the broken entry in memory until it
+ * restarts, and if it writes that copy back, the fix has to happen again.
+ *
+ * Only null, not a missing key: null is what was written and what was seen to
+ * throw, while no entry the desktop app wrote itself has been seen without the
+ * field, so rewriting that case would be guessing on its behalf.
+ */
+export async function repairIndex(roots = [MAIN_ROOT], transcriptsRoot = TRANSCRIPTS) {
+	const repaired = [];
+
+	for (const account of await listIndexAccounts(roots)) {
+		for (const file of (await readdir(account.path)).filter((f) => f.endsWith('.json'))) {
+			const entry = await readEntry(join(account.path, file));
+			if (!entry || entry.model !== null) continue;
+
+			const { transcript } = entry.cwd ? await transcriptFacts(entry.cliSessionId, entry.cwd, transcriptsRoot) : {};
+			const model = await modelFor({ transcriptFile: transcript, toAccountPath: account.path });
+
+			const { file: entryFile, ...rest } = entry;
+			await writeFile(entryFile, JSON.stringify({ ...rest, model }, null, 2));
+			repaired.push({ title: entry.title ?? null, cwd: entry.cwd ?? null, model, account: account.id });
+		}
+	}
+
+	return repaired;
+}
+
+/**
  * Removes a session: the entry that lists it and the transcript it points at.
  *
  * Both, deliberately — deleting only the entry would leave the conversation on

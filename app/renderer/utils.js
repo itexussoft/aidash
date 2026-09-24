@@ -957,7 +957,9 @@ export async function rescan() {
 				.filter(Boolean)
 				.join(' · '),
 		);
-		notify('');
+		const repaired = view.repaired?.length ?? 0;
+		if (repaired) done(`Repaired ${repaired} session${repaired === 1 ? '' : 's'} the desktop app was hiding — restart Claude Code to see ${repaired === 1 ? 'it' : 'them'}`);
+		else notify('');
 	} catch (err) {
 		failed(reason(err));
 	}

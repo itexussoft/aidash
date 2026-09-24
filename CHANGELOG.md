@@ -10,6 +10,8 @@ Each `##` heading is a version and each `-` under it is one line in the app.
 
 - Stops a session dragged in from Only in the CLI, or copied from Codex, from
   vanishing in the desktop app: its entry now always names a model
+- Brings back sessions an earlier version left hidden that way, on the next
+  scan of Local Sessions — restart Claude Code once to see them
 
 ## 0.3.0
 
