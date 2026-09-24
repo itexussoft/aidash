@@ -44,13 +44,65 @@ jobs:
       # command for cmd.exe — and those are invisible everywhere else.
       - run: npm test
 
+      # electron-builder can import the certificate itself from CSC_LINK, but it
+      # then runs `security set-key-partition-list` with the certificate's
+      # password where the keychain's belongs (importCerts in app-builder-lib's
+      # macCodeSign). macOS let that through on a keychain already unlocked; the
+      # runner image of 2026-09-07 (macOS 25.6) refuses it, and the build stopped
+      # before signing anything. So the keychain is built here, each password in
+      # its own place, and electron-builder is only told which one to sign from.
+      #
+      # It reads CSC_KEYCHAIN only when CSC_LINK is not set at all — an empty
+      # string counts as set — which is why the Build step no longer mentions it.
+      - name: Import the signing certificate
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 32)"
+          echo "::add-mask::$password"
+
+          # Decoded by electron-builder's own function, so the secret is read
+          # exactly as it was when electron-builder imported it.
+          node -e "process.stdout.write(require('builder-util').decodeCscLinkBase64(process.env.P12.trim()) ?? '')" > "$RUNNER_TEMP/signing.p12"
+          [ -s "$RUNNER_TEMP/signing.p12" ] || { echo "::error title=signing certificate::MAC_CERTIFICATE_P12 is empty or not base64"; exit 1; }
+
+          security create-keychain -p "$password" "$keychain"
+          # No options: no auto-lock, as electron-builder set it — two
+          # architectures signed and notarized outlast the default timeout.
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+
+          # The Apple intermediates electron-builder ships and adds on its own
+          # path. Without them in the search list the identity is not valid, and
+          # that surfaces only as an app that quietly went out unsigned.
+          cp node_modules/app-builder-lib/certs/root_certs.keychain "$RUNNER_TEMP/root-certs.keychain"
+          security list-keychains -d user | xargs security list-keychains -d user -s "$keychain" "$RUNNER_TEMP/root-certs.keychain"
+
+          # Proven here, with the query electron-builder makes, rather than
+          # discovered after a build as an unsigned app.
+          # Read once and then searched, not piped into grep -q: with pipefail an
+          # early exit from grep can fail the pipeline on a match.
+          identities="$(security find-identity -v -p codesigning "$keychain")"
+          if ! grep -q 'Developer ID Application' <<<"$identities"; then
+            echo "::error title=signing identity::no valid Developer ID Application identity after import — $(tr '\n' ' ' <<<"$identities")"
+            exit 1
+          fi
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
       - name: Build
         env:
           # macOS: sign with the Developer ID cert and notarize with Apple.
-          # electron-builder does both automatically once these are set —
-          # see MacTargetHelper.getNotarizeOptions in app-builder-lib.
-          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERTIFICATE_P12 || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.MAC_CERTIFICATE_PASSWORD || '' }}
+          # electron-builder does both automatically — signing from the keychain
+          # the step above leaves in CSC_KEYCHAIN, notarizing once these are set
+          # (see MacTargetHelper.getNotarizeOptions in app-builder-lib).
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
